@@ -14,6 +14,11 @@ function required(name) {
 }
 
 function readConfig() {
+  const number = (name, fallback) => {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) ? value : fallback;
+  };
+
   return {
     spreadsheetId: required("GOOGLE_SPREADSHEET_ID"),
     serviceAccountFile: path.resolve(
@@ -33,6 +38,13 @@ function readConfig() {
     ),
     whatsappPairingMode:
       process.env.WHATSAPP_PAIRING_MODE?.trim().toLowerCase() || "auto",
+    whatsappPriceDivisor: number("WHATSAPP_PRICE_DIVISOR", 1000),
+    deliveryFees: {
+      brampton: number("BRAMPTON_DELIVERY_FEE", 5),
+      mississauga: number("MISSISSAUGA_DELIVERY_FEE", 8),
+    },
+    adminHost: process.env.ADMIN_HOST?.trim() || "127.0.0.1",
+    adminPort: number("ADMIN_PORT", 3030),
   };
 }
 

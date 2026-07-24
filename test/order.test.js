@@ -14,14 +14,14 @@ test("normaliza un carrito de WhatsApp", () => {
     customerName: "Ana",
     order: {
       currency: "CAD",
-      subtotal: "20.00",
-      total: "20.00",
+      subtotal: "20000",
+      total: "20000",
       products: [
         {
           id: "concha-chocolate",
           name: "Concha de chocolate",
           quantity: 4,
-          price: "2.50",
+          price: "2500",
         },
       ],
     },
@@ -30,6 +30,8 @@ test("normaliza un carrito de WhatsApp", () => {
   assert.equal(result.summary.orderId, "WA-123");
   assert.equal(result.summary.phone, "19055550123");
   assert.equal(result.summary.customerName, "Ana");
+  assert.equal(result.summary.total, 20);
+  assert.equal(result.summary.status, "ESPERANDO_DATOS");
   assert.equal(result.items[0].quantity, 4);
   assert.equal(result.items[0].lineTotal, 10);
 });
@@ -38,11 +40,13 @@ test("produce filas con el numero correcto de columnas", () => {
   const result = normalizeOrder({
     message: { orderId: "WA-456", from: "1@c.us" },
     order: {
-      products: [{ id: "bolillo", name: "Bolillo", quantity: 2, price: 1 }],
+      products: [
+        { id: "bolillo", name: "Bolillo", quantity: 2, price: 1000 },
+      ],
     },
   });
 
-  assert.equal(summaryRow(result.summary).length, 9);
+  assert.equal(summaryRow(result.summary).length, 23);
   assert.equal(itemRow(result.items[0]).length, 8);
 });
 

@@ -1,6 +1,7 @@
 "use strict";
 
 const { readConfig } = require("./config");
+const { createAdminServer } = require("./admin-server");
 const { GoogleSheetsOrderStore } = require("./google-sheets");
 const { createWhatsAppClient } = require("./whatsapp");
 
@@ -14,9 +15,11 @@ async function main() {
 
   const whatsapp = createWhatsAppClient({ config, store });
   await whatsapp.initialize();
+  const adminServer = createAdminServer({ config, store, whatsapp });
 
   const shutdown = async (signal) => {
     console.log(`\n${signal}: cerrando WhatsApp...`);
+    adminServer.close();
     await whatsapp.destroy().catch(() => {});
     process.exit(0);
   };

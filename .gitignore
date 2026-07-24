@@ -6,3 +6,4 @@ node_modules/
 npm-debug.log*
 whatsapp-qr.png
 bot.*.log
+panel-*.png

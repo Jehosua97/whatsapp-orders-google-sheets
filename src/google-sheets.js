@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const { google } = require("googleapis");
+const { isActiveOrder } = require("./fulfillment");
 const { itemRow, summaryRow } = require("./order");
 
 const ORDER_HEADERS = [
@@ -11,9 +12,49 @@ const ORDER_HEADERS = [
   "Cliente",
   "Moneda",
   "Subtotal",
-  "Total",
+  "Total productos",
   "Estado",
   "ID del mensaje",
+  "ID del chat",
+  "Modalidad",
+  "Ciudad",
+  "Direccion",
+  "Codigo postal",
+  "Fecha solicitada",
+  "Horario",
+  "Costo entrega",
+  "Total final",
+  "Estado horario",
+  "Latitud",
+  "Longitud",
+  "Ultima actualizacion",
+  "Notas del cliente",
+];
+
+const ORDER_KEYS = [
+  "receivedAt",
+  "orderId",
+  "phone",
+  "customerName",
+  "currency",
+  "subtotal",
+  "total",
+  "status",
+  "messageId",
+  "chatId",
+  "fulfillmentType",
+  "city",
+  "address",
+  "postalCode",
+  "requestedDate",
+  "timeWindow",
+  "deliveryFee",
+  "grandTotal",
+  "scheduleStatus",
+  "latitude",
+  "longitude",
+  "updatedAt",
+  "customerNotes",
 ];
 
 const ITEM_HEADERS = [
@@ -27,8 +68,34 @@ const ITEM_HEADERS = [
   "Total de linea",
 ];
 
+const ITEM_KEYS = [
+  "receivedAt",
+  "orderId",
+  "productId",
+  "productName",
+  "quantity",
+  "unitPrice",
+  "currency",
+  "lineTotal",
+];
+
 function quoteSheetTitle(title) {
   return `'${title.replaceAll("'", "''")}'`;
+}
+
+function columnName(number) {
+  let result = "";
+  let current = number;
+  while (current > 0) {
+    current -= 1;
+    result = String.fromCharCode(65 + (current % 26)) + result;
+    current = Math.floor(current / 26);
+  }
+  return result;
+}
+
+function objectFromRow(row, keys) {
+  return Object.fromEntries(keys.map((key, index) => [key, row[index] ?? ""]));
 }
 
 class GoogleSheetsOrderStore {
@@ -92,37 +159,75 @@ class GoogleSheetsOrderStore {
   }
 
   async ensureHeaders(title, headers) {
-    const range = `${quoteSheetTitle(title)}!1:1`;
+    const endColumn = columnName(headers.length);
+    const range = `${quoteSheetTitle(title)}!A1:${endColumn}1`;
     const response = await this.sheets.spreadsheets.values.get({
       spreadsheetId: this.config.spreadsheetId,
       range,
     });
+    const existing = response.data.values?.[0] || [];
 
-    if (!response.data.values?.[0]?.length) {
+    if (headers.some((header, index) => existing[index] !== header)) {
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: this.config.spreadsheetId,
-        range: `${quoteSheetTitle(title)}!A1`,
+        range,
         valueInputOption: "RAW",
         requestBody: { values: [headers] },
       });
     }
   }
 
-  async hasOrder(orderId) {
+  enqueue(operation) {
+    const result = this.writeQueue.then(operation);
+    this.writeQueue = result.catch(() => {});
+    return result;
+  }
+
+  async listOrders() {
+    const title = quoteSheetTitle(this.config.ordersSheet);
+    const endColumn = columnName(ORDER_HEADERS.length);
     const response = await this.sheets.spreadsheets.values.get({
       spreadsheetId: this.config.spreadsheetId,
-      range: `${quoteSheetTitle(this.config.ordersSheet)}!B2:B`,
+      range: `${title}!A2:${endColumn}`,
     });
 
-    return (response.data.values || []).some(
-      ([storedOrderId]) => String(storedOrderId) === String(orderId),
+    return (response.data.values || [])
+      .map((row, index) => ({
+        ...objectFromRow(row, ORDER_KEYS),
+        sheetRow: index + 2,
+      }))
+      .reverse();
+  }
+
+  async getOrder(orderId) {
+    const orders = await this.listOrders();
+    return orders.find((order) => String(order.orderId) === String(orderId));
+  }
+
+  async getPendingOrderByChat(chatId) {
+    const orders = await this.listOrders();
+    return orders.find(
+      (order) => order.chatId === chatId && isActiveOrder(order),
     );
   }
 
+  async getOrderItems(orderId) {
+    const title = quoteSheetTitle(this.config.itemsSheet);
+    const response = await this.sheets.spreadsheets.values.get({
+      spreadsheetId: this.config.spreadsheetId,
+      range: `${title}!A2:H`,
+    });
+    return (response.data.values || [])
+      .map((row) => objectFromRow(row, ITEM_KEYS))
+      .filter((item) => String(item.orderId) === String(orderId));
+  }
+
+  async hasOrder(orderId) {
+    return Boolean(await this.getOrder(orderId));
+  }
+
   async saveOrder(order) {
-    const operation = this.writeQueue.then(() => this.saveOrderUnlocked(order));
-    this.writeQueue = operation.catch(() => {});
-    return operation;
+    return this.enqueue(() => this.saveOrderUnlocked(order));
   }
 
   async saveOrderUnlocked(order) {
@@ -145,6 +250,7 @@ class GoogleSheetsOrderStore {
       const nextItemRow =
         (current.data.valueRanges?.[1]?.values?.length || 1) + 1;
       const lastItemRow = nextItemRow + order.items.length - 1;
+      const orderEndColumn = columnName(ORDER_HEADERS.length);
 
       await this.sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: this.config.spreadsheetId,
@@ -152,7 +258,7 @@ class GoogleSheetsOrderStore {
           valueInputOption: "USER_ENTERED",
           data: [
             {
-              range: `${ordersTitle}!A${nextOrderRow}:I${nextOrderRow}`,
+              range: `${ordersTitle}!A${nextOrderRow}:${orderEndColumn}${nextOrderRow}`,
               values: [summaryRow(order.summary)],
             },
             {
@@ -168,11 +274,35 @@ class GoogleSheetsOrderStore {
       this.pendingOrderIds.delete(orderId);
     }
   }
+
+  async updateOrder(orderId, patch) {
+    return this.enqueue(async () => {
+      const current = await this.getOrder(orderId);
+      if (!current) throw new Error(`No existe el pedido ${orderId}`);
+
+      const updated = {
+        ...current,
+        ...patch,
+        updatedAt: patch.updatedAt || new Date().toISOString(),
+      };
+      const title = quoteSheetTitle(this.config.ordersSheet);
+      const endColumn = columnName(ORDER_HEADERS.length);
+
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.config.spreadsheetId,
+        range: `${title}!A${current.sheetRow}:${endColumn}${current.sheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [summaryRow(updated)] },
+      });
+      return updated;
+    });
+  }
 }
 
 module.exports = {
   GoogleSheetsOrderStore,
   ITEM_HEADERS,
   ORDER_HEADERS,
+  columnName,
   quoteSheetTitle,
 };

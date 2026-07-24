@@ -42,6 +42,9 @@ same rows.
 - Retry strategy for delayed WhatsApp order details.
 - Persistent WhatsApp session through `LocalAuth`.
 - QR and phone-number pairing modes.
+- Natural-language pickup and delivery capture from customer replies.
+- Brampton and Mississauga delivery fee calculation.
+- Local administrative panel for scheduling and confirmation.
 - Customer confirmation only after a successful Sheets write.
 - Node.js native test suite and GitHub Actions CI.
 - Secrets, authentication state, QR images, and runtime logs excluded from Git.
@@ -64,8 +67,8 @@ The service creates two worksheets:
 
 **Orders**
 
-| Received at | Order ID | Phone | Customer | Currency | Subtotal | Total | Status |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+| Order ID | Customer | Product total | Mode | City | Date | Window | Delivery | Final total | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 **Order Items**
 
@@ -114,6 +117,11 @@ GOOGLE_ITEMS_SHEET=Order Items
 SEND_CUSTOMER_CONFIRMATION=true
 WHATSAPP_AUTH_PATH=.wwebjs_auth
 WHATSAPP_PHONE_NUMBER=
+WHATSAPP_PRICE_DIVISOR=1000
+BRAMPTON_DELIVERY_FEE=5
+MISSISSAUGA_DELIVERY_FEE=8
+ADMIN_HOST=127.0.0.1
+ADMIN_PORT=3030
 ```
 
 Start the service:
@@ -126,14 +134,25 @@ Without `WHATSAPP_PHONE_NUMBER`, the service generates
 `whatsapp-qr.png`. When a phone number is configured in international,
 digits-only format, the process displays an eight-character pairing code.
 
+The administrative panel is available only on the local computer:
+
+```text
+http://127.0.0.1:3030
+```
+
+From the panel, an operator can select pickup or delivery, set Brampton or
+Mississauga, capture the address, choose a date and time window, calculate the
+final total, and send a confirmation through WhatsApp.
+
 ## Testing
 
 ```powershell
 npm.cmd test
 ```
 
-The tests cover cart normalization, spreadsheet row shape, calculated line
-totals, and rejection of empty carts.
+The tests cover cart normalization, WhatsApp monetary units, spreadsheet row
+shape, pickup and delivery classification, city fees, final totals, and
+confirmation validation.
 
 ## Security
 
@@ -166,8 +185,9 @@ The service requires continuous network access and persistent storage for
 - In-memory serialization assumes one running service instance.
 - Google Sheets is suitable for this workload size, not high-volume
   transactional processing.
-- Delivery details and payment confirmation are not yet part of the cart
-  ingestion workflow.
+- Address-to-city reverse geocoding is not yet automatic when a shared
+  location has coordinates but no address text.
+- Payment confirmation is not yet part of the workflow.
 
 ## Roadmap
 
