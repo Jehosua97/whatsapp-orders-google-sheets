@@ -44,7 +44,8 @@ function createWhatsAppClient({ config, store, logger = console }) {
       clientId: "lacenaduria",
       dataPath: config.whatsappAuthPath,
     }),
-    pairWithPhoneNumber: config.whatsappPhoneNumber
+    pairWithPhoneNumber:
+      config.whatsappPhoneNumber && config.whatsappPairingMode !== "qr"
       ? {
           phoneNumber: config.whatsappPhoneNumber,
           showNotification: true,

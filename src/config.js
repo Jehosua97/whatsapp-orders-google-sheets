@@ -31,6 +31,8 @@ function readConfig() {
       /\D/g,
       "",
     ),
+    whatsappPairingMode:
+      process.env.WHATSAPP_PAIRING_MODE?.trim().toLowerCase() || "auto",
   };
 }
 
