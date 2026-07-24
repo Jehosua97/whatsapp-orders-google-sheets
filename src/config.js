@@ -29,6 +29,8 @@ function readConfig() {
     itemsSheet: process.env.GOOGLE_ITEMS_SHEET?.trim() || "Productos",
     productionSheet:
       process.env.GOOGLE_PRODUCTION_SHEET?.trim() || "Produccion",
+    kitchenSheet:
+      process.env.GOOGLE_KITCHEN_SHEET?.trim() || "Pedidos para cocina",
     sendCustomerConfirmation:
       process.env.SEND_CUSTOMER_CONFIRMATION !== "false",
     whatsappAuthPath: path.resolve(
@@ -45,8 +47,6 @@ function readConfig() {
       brampton: number("BRAMPTON_DELIVERY_FEE", 5),
       mississauga: number("MISSISSAUGA_DELIVERY_FEE", 8),
     },
-    adminHost: process.env.ADMIN_HOST?.trim() || "127.0.0.1",
-    adminPort: number("ADMIN_PORT", 3030),
     automationAllowedChatIds: new Set(
       (process.env.WHATSAPP_AUTOMATION_ALLOWLIST || "")
         .split(",")

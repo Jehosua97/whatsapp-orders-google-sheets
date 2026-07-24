@@ -93,6 +93,18 @@ const PRODUCTION_HEADERS = [
   "Pedidos",
 ];
 
+const KITCHEN_HEADERS = [
+  "Fecha y hora",
+  "Cliente",
+  "Telefono",
+  "Producto",
+  "Cantidad",
+  "Entrega o recogida",
+  "Notas",
+  "ID pedido",
+  "ID chat",
+];
+
 function quoteSheetTitle(title) {
   return `'${title.replaceAll("'", "''")}'`;
 }
@@ -110,6 +122,49 @@ function columnName(number) {
 
 function objectFromRow(row, keys) {
   return Object.fromEntries(keys.map((key, index) => [key, row[index] ?? ""]));
+}
+
+function receivedAtLabel(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value || "");
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Toronto",
+  }).format(date);
+}
+
+function fulfillmentLabel(order) {
+  if (order.fulfillmentConflict === "SI") return "Revisar seleccion";
+  if (order.fulfillmentType === "PICKUP") return "Recoger";
+  if (order.city === "BRAMPTON") return "Entrega en Brampton";
+  if (order.city === "MISSISSAUGA") return "Entrega en Mississauga";
+  if (order.fulfillmentType === "DELIVERY") return "Entrega";
+  return "Por definir";
+}
+
+function kitchenNotes(order) {
+  return [
+    order.requestedDate && `Fecha: ${order.requestedDate}`,
+    order.timeWindow && `Horario: ${order.timeWindow}`,
+    order.customerNotes,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function kitchenRow(order, item) {
+  return [
+    receivedAtLabel(order.receivedAt),
+    order.customerName,
+    order.phone,
+    item.productName,
+    item.quantity,
+    fulfillmentLabel(order),
+    kitchenNotes(order),
+    order.orderId,
+    order.chatId,
+  ];
 }
 
 class GoogleSheetsOrderStore {
@@ -134,12 +189,13 @@ class GoogleSheetsOrderStore {
 
     this.sheets = google.sheets({ version: "v4", auth });
     await this.ensureWorksheets();
+    await this.refreshKitchenViewUnlocked();
   }
 
   async ensureWorksheets() {
     const response = await this.sheets.spreadsheets.get({
       spreadsheetId: this.config.spreadsheetId,
-      fields: "sheets.properties.title",
+      fields: "sheets.properties(sheetId,title)",
     });
 
     const existing = new Set(
@@ -149,6 +205,7 @@ class GoogleSheetsOrderStore {
       [this.config.ordersSheet, ORDER_HEADERS],
       [this.config.itemsSheet, ITEM_HEADERS],
       [this.config.productionSheet, PRODUCTION_HEADERS],
+      [this.config.kitchenSheet, KITCHEN_HEADERS],
     ];
 
     const missing = definitions.filter(([title]) => !existing.has(title));
@@ -171,6 +228,107 @@ class GoogleSheetsOrderStore {
     for (const [title, headers] of definitions) {
       await this.ensureHeaders(title, headers);
     }
+
+    await this.formatWorksheets();
+  }
+
+  async formatWorksheets() {
+    const response = await this.sheets.spreadsheets.get({
+      spreadsheetId: this.config.spreadsheetId,
+      fields: "sheets.properties(sheetId,title)",
+    });
+    const sheetIds = new Map(
+      (response.data.sheets || []).map((sheet) => [
+        sheet.properties.title,
+        sheet.properties.sheetId,
+      ]),
+    );
+    const kitchenSheetId = sheetIds.get(this.config.kitchenSheet);
+    if (kitchenSheetId === undefined) return;
+
+    const requests = [
+      {
+        updateSheetProperties: {
+          properties: {
+            sheetId: kitchenSheetId,
+            hidden: false,
+            gridProperties: { frozenRowCount: 1 },
+          },
+          fields: "hidden,gridProperties.frozenRowCount",
+        },
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: kitchenSheetId,
+            startRowIndex: 0,
+            endRowIndex: 1,
+            startColumnIndex: 0,
+            endColumnIndex: KITCHEN_HEADERS.length,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: { red: 0.29, green: 0.12, blue: 0.08 },
+              textFormat: {
+                bold: true,
+                foregroundColor: { red: 1, green: 1, blue: 1 },
+              },
+              verticalAlignment: "MIDDLE",
+            },
+          },
+          fields: "userEnteredFormat",
+        },
+      },
+      {
+        updateDimensionProperties: {
+          range: {
+            sheetId: kitchenSheetId,
+            dimension: "COLUMNS",
+            startIndex: 7,
+            endIndex: 9,
+          },
+          properties: { hiddenByUser: true },
+          fields: "hiddenByUser",
+        },
+      },
+    ];
+
+    [150, 150, 125, 220, 85, 180, 300].forEach(
+      (pixelSize, columnIndex) => {
+        requests.push({
+          updateDimensionProperties: {
+            range: {
+              sheetId: kitchenSheetId,
+              dimension: "COLUMNS",
+              startIndex: columnIndex,
+              endIndex: columnIndex + 1,
+            },
+            properties: { pixelSize },
+            fields: "pixelSize",
+          },
+        });
+      },
+    );
+
+    for (const title of [
+      this.config.ordersSheet,
+      this.config.itemsSheet,
+      this.config.productionSheet,
+    ]) {
+      const sheetId = sheetIds.get(title);
+      if (sheetId === undefined || sheetId === kitchenSheetId) continue;
+      requests.push({
+        updateSheetProperties: {
+          properties: { sheetId, hidden: true },
+          fields: "hidden",
+        },
+      });
+    }
+
+    await this.sheets.spreadsheets.batchUpdate({
+      spreadsheetId: this.config.spreadsheetId,
+      requestBody: { requests },
+    });
   }
 
   async ensureHeaders(title, headers) {
@@ -284,6 +442,7 @@ class GoogleSheetsOrderStore {
         },
       });
 
+      await this.refreshKitchenViewUnlocked();
       return { inserted: true };
     } finally {
       this.pendingOrderIds.delete(orderId);
@@ -309,8 +468,37 @@ class GoogleSheetsOrderStore {
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [summaryRow(updated)] },
       });
+      await this.refreshKitchenViewUnlocked();
       return updated;
     });
+  }
+
+  async refreshKitchenViewUnlocked() {
+    const orders = await this.listOrders();
+    const rows = [];
+
+    for (const order of orders) {
+      const items = await this.getOrderItems(order.orderId);
+      for (const item of items) {
+        if (item.isLogistics === "SI") continue;
+        rows.push(kitchenRow(order, item));
+      }
+    }
+
+    const title = quoteSheetTitle(this.config.kitchenSheet);
+    await this.sheets.spreadsheets.values.clear({
+      spreadsheetId: this.config.spreadsheetId,
+      range: `${title}!A2:I`,
+    });
+    if (rows.length) {
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.config.spreadsheetId,
+        range: `${title}!A2:I${rows.length + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: rows },
+      });
+    }
+    return rows;
   }
 
   async refreshProductionSummary() {
@@ -374,8 +562,11 @@ class GoogleSheetsOrderStore {
 module.exports = {
   GoogleSheetsOrderStore,
   ITEM_HEADERS,
+  KITCHEN_HEADERS,
   ORDER_HEADERS,
   PRODUCTION_HEADERS,
   columnName,
+  fulfillmentLabel,
+  kitchenRow,
   quoteSheetTitle,
 };

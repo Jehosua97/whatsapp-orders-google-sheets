@@ -22,8 +22,8 @@ flowchart LR
     Client --> Normalize[Order normalization]
     Normalize --> Dedup[Order ID deduplication]
     Dedup --> Sheets[Google Sheets API]
-    Sheets --> Orders[(Orders worksheet)]
-    Sheets --> Items[(Order items worksheet)]
+    Sheets --> Kitchen[(Kitchen orders view)]
+    Sheets --> Internal[(Hidden system worksheets)]
     Dedup --> Reply[Customer confirmation]
 ```
 
@@ -35,7 +35,7 @@ same rows.
 ## Engineering Highlights
 
 - Google Cloud service-account authentication with spreadsheet-scoped access.
-- Automatic provisioning of `Orders` and `Order Items` worksheets and headers.
+- Automatic provisioning of a kitchen-friendly worksheet and internal records.
 - Idempotency using the WhatsApp order ID.
 - In-process write queue for concurrent order events.
 - Atomic multi-range update for the order summary and its line items.
@@ -46,8 +46,8 @@ same rows.
 - Brampton and Mississauga delivery fee calculation.
 - Allowlist safety control that disables automation for every unapproved chat.
 - Fulfillment selection derived from catalog items.
-- Production worksheet grouped by confirmed date and product quantity.
-- Local administrative panel for scheduling and confirmation.
+- A single visible worksheet with one row per product and clear quantities.
+- Technical worksheets hidden automatically without deleting source data.
 - Customer confirmation only after a successful Sheets write.
 - Node.js native test suite and GitHub Actions CI.
 - Secrets, authentication state, QR images, and runtime logs excluded from Git.
@@ -66,17 +66,15 @@ same rows.
 
 ## Data Model
 
-The service creates two worksheets:
+The only visible worksheet is `Pedidos para cocina`:
 
-**Orders**
+| Date and time | Customer | Phone | Product | Quantity | Delivery or pickup | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
 
-| Order ID | Customer | Product total | Mode | City | Date | Window | Delivery | Final total | Status |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-
-**Order Items**
-
-| Received at | Order ID | Product ID | Product | Quantity | Unit price | Currency | Line total |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+Each catalog product has its own row. Delivery catalog items are used to fill
+the delivery-or-pickup column and are not counted as food. Technical order and
+item records remain in hidden worksheets for deduplication and future
+automation.
 
 ## Local Setup
 
@@ -118,14 +116,13 @@ GOOGLE_SERVICE_ACCOUNT_FILE=.secrets/google-service-account.json
 GOOGLE_ORDERS_SHEET=Orders
 GOOGLE_ITEMS_SHEET=Order Items
 GOOGLE_PRODUCTION_SHEET=Production
+GOOGLE_KITCHEN_SHEET=Kitchen Orders
 SEND_CUSTOMER_CONFIRMATION=true
 WHATSAPP_AUTH_PATH=.wwebjs_auth
 WHATSAPP_PHONE_NUMBER=
 WHATSAPP_PRICE_DIVISOR=1000
 BRAMPTON_DELIVERY_FEE=5
 MISSISSAUGA_DELIVERY_FEE=8
-ADMIN_HOST=127.0.0.1
-ADMIN_PORT=3030
 WHATSAPP_AUTOMATION_ALLOWLIST=
 AUTO_REPLY_COOLDOWN_HOURS=24
 AUTO_REPLY_STATE_FILE=.data/auto-reply-state.json
@@ -140,16 +137,6 @@ npm.cmd start
 Without `WHATSAPP_PHONE_NUMBER`, the service generates
 `whatsapp-qr.png`. When a phone number is configured in international,
 digits-only format, the process displays an eight-character pairing code.
-
-The administrative panel is available only on the local computer:
-
-```text
-http://127.0.0.1:3030
-```
-
-From the panel, an operator can select pickup or delivery, set Brampton or
-Mississauga, capture the address, choose a date and time window, calculate the
-final total, and send a confirmation through WhatsApp.
 
 ### Safe test mode
 
@@ -182,9 +169,8 @@ npm.cmd test
 ```
 
 The tests cover cart normalization, WhatsApp monetary units, spreadsheet row
-shape, pickup and delivery classification, city fees, final totals, and
-confirmation validation. The `Production` worksheet includes only confirmed
-orders and groups quantities by requested date and product.
+shape, the simplified kitchen view, pickup and delivery classification, and
+city fees.
 
 ## Security
 

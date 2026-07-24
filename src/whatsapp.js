@@ -212,11 +212,16 @@ function createWhatsAppClient({ config, store, logger = console }) {
           `Pedido guardado en Google Sheets: ${normalized.summary.orderId}`,
         );
         if (config.sendCustomerConfirmation) {
+          const productLines = normalized.items
+            .filter((item) => !item.isLogistics)
+            .map((item) => `- ${item.quantity} x ${item.productName}`);
           const lines = [
             "Gracias, ya recibimos tu carrito.",
-            `Pedido: ${normalized.summary.orderId}`,
-            `Productos: ${normalized.summary.productSummary || "Sin productos de cocina"}`,
-            `Subtotal: ${formatMoney(normalized.summary.total, normalized.summary.currency)}`,
+            "",
+            "Tu pedido:",
+            ...(productLines.length
+              ? productLines
+              : ["- No encontramos productos para preparar"]),
             "",
           ];
           if (normalized.summary.fulfillmentConflict) {
