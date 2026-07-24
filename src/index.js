@@ -14,9 +14,15 @@ async function main() {
 
   const whatsapp = createWhatsAppClient({ config, store });
   await whatsapp.initialize();
+  const kitchenSyncTimer = setInterval(() => {
+    store.syncKitchenView().catch((error) => {
+      console.error("No se pudo sincronizar el status de cocina:", error);
+    });
+  }, config.kitchenSyncSeconds * 1000);
 
   const shutdown = async (signal) => {
     console.log(`\n${signal}: cerrando WhatsApp...`);
+    clearInterval(kitchenSyncTimer);
     await whatsapp.destroy().catch(() => {});
     process.exit(0);
   };

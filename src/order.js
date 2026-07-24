@@ -124,6 +124,7 @@ function normalizeOrder({
       customerNotes: "",
       productSummary,
       fulfillmentConflict: fulfillment.conflict,
+      kitchenStatus: "Confirmado",
     },
     items,
   };
@@ -156,6 +157,7 @@ function summaryRow(summary) {
     summary.customerNotes,
     summary.productSummary,
     yesNo(summary.fulfillmentConflict),
+    summary.kitchenStatus || "Confirmado",
   ];
 }
 

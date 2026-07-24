@@ -31,6 +31,7 @@ function readConfig() {
       process.env.GOOGLE_PRODUCTION_SHEET?.trim() || "Produccion",
     kitchenSheet:
       process.env.GOOGLE_KITCHEN_SHEET?.trim() || "Pedidos para cocina",
+    kitchenSyncSeconds: number("KITCHEN_SYNC_SECONDS", 30),
     sendCustomerConfirmation:
       process.env.SEND_CUSTOMER_CONFIRMATION !== "false",
     whatsappAuthPath: path.resolve(

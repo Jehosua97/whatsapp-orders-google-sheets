@@ -5,6 +5,8 @@ const assert = require("node:assert/strict");
 const {
   buildKitchenTable,
   fulfillmentLabel,
+  GoogleSheetsOrderStore,
+  kitchenStatus,
 } = require("../src/google-sheets");
 
 test("crea una fila por pedido y una columna por producto", () => {
@@ -42,16 +44,20 @@ test("crea una fila por pedido y una columna por producto", () => {
     "Concha de vainilla",
   ]);
   assert.equal(table.orderRows.length, 1);
-  assert.deepEqual(table.orderRows[0].slice(0, 6), [
+  assert.deepEqual(table.orderRows[0].slice(0, 7), [
     "WA-123",
+    "Confirmado",
     "24/07/26, 12:00 p.m.",
     "Ana",
     "19055550123",
     "Entrega en Brampton",
     "",
   ]);
-  assert.deepEqual(table.orderRows[0].slice(6), [4, 2]);
-  assert.deepEqual(table.totalRow.slice(6), ["=SUM(G3:G)", "=SUM(H3:H)"]);
+  assert.deepEqual(table.orderRows[0].slice(7), [4, 2]);
+  assert.deepEqual(table.totalRow.slice(7), [
+    '=SUMIF($B$3:$B,"Confirmado",H$3:H)',
+    '=SUMIF($B$3:$B,"Confirmado",I$3:I)',
+  ]);
 });
 
 test("suma productos repetidos dentro del mismo pedido", () => {
@@ -73,7 +79,7 @@ test("suma productos repetidos dentro del mismo pedido", () => {
     ]),
   );
   assert.deepEqual(table.productNames, ["Bolillo"]);
-  assert.equal(table.orderRows[0][6], 5);
+  assert.equal(table.orderRows[0][7], 5);
 });
 
 test("acomoda hasta diez productos en una sola fila", () => {
@@ -86,9 +92,74 @@ test("acomoda hasta diez productos en una sola fila", () => {
     new Map([["WA-10", items]]),
   );
 
-  assert.equal(table.headers.length, 16);
-  assert.equal(table.orderRows[0].length, 16);
-  assert.equal(table.totalRow[15], "=SUM(P3:P)");
+  assert.equal(table.headers.length, 17);
+  assert.equal(table.orderRows[0].length, 17);
+  assert.equal(
+    table.totalRow[16],
+    '=SUMIF($B$3:$B,"Confirmado",Q$3:Q)',
+  );
+});
+
+test("coloca pedidos entregados al final", () => {
+  const orders = [
+    {
+      orderId: "ENTREGADO",
+      receivedAt: "2026-07-24T17:00:00.000Z",
+      kitchenStatus: "Entregado",
+    },
+    {
+      orderId: "CONFIRMADO",
+      receivedAt: "2026-07-24T16:00:00.000Z",
+      kitchenStatus: "Confirmado",
+    },
+  ];
+  const table = buildKitchenTable(
+    orders,
+    new Map([
+      ["ENTREGADO", [{ productName: "Bolillo", quantity: 2 }]],
+      ["CONFIRMADO", [{ productName: "Bolillo", quantity: 3 }]],
+    ]),
+  );
+
+  assert.equal(table.orderRows[0][0], "CONFIRMADO");
+  assert.equal(table.orderRows[1][0], "ENTREGADO");
+  assert.equal(kitchenStatus(orders[0]), "Entregado");
+});
+
+test("guarda en la hoja interna un status editado por cocina", async () => {
+  let batchRequest;
+  const store = new GoogleSheetsOrderStore({
+    kitchenSheet: "Pedidos para cocina",
+    ordersSheet: "Pedidos",
+  });
+  store.sheets = {
+    spreadsheets: {
+      values: {
+        get: async () => ({
+          data: { values: [["WA-123", "Entregado"]] },
+        }),
+        batchUpdate: async (request) => {
+          batchRequest = request;
+        },
+      },
+    },
+  };
+  store.listOrders = async () => [
+    {
+      orderId: "WA-123",
+      kitchenStatus: "Confirmado",
+      sheetRow: 4,
+    },
+  ];
+
+  const updated = await store.syncKitchenStatusesUnlocked();
+
+  assert.equal(updated, 1);
+  assert.equal(
+    batchRequest.requestBody.data[0].range,
+    "'Pedidos'!Z4",
+  );
+  assert.deepEqual(batchRequest.requestBody.data[0].values, [["Entregado"]]);
 });
 
 test("muestra cuando falta elegir entrega o recogida", () => {

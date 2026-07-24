@@ -79,6 +79,12 @@ fill the delivery-or-pickup column and are not counted as food. Technical order
 and item records remain in hidden worksheets for deduplication and future
 automation.
 
+The `Status` column has two options:
+
+- `Confirmado`: its product quantities are included in `TOTAL A PREPARAR`.
+- `Entregado`: it is excluded from totals, displayed in gray, and moved below
+  active orders by the background synchronization process.
+
 ## Local Setup
 
 ### Prerequisites

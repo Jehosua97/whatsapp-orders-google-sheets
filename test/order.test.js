@@ -47,7 +47,7 @@ test("produce filas con el numero correcto de columnas", () => {
     },
   });
 
-  assert.equal(summaryRow(result.summary).length, 25);
+  assert.equal(summaryRow(result.summary).length, 26);
   assert.equal(itemRow(result.items[0]).length, 9);
 });
 

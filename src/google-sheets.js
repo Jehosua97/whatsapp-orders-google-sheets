@@ -31,6 +31,7 @@ const ORDER_HEADERS = [
   "Notas del cliente",
   "Resumen productos",
   "Conflicto modalidad",
+  "Estado cocina",
 ];
 
 const ORDER_KEYS = [
@@ -59,6 +60,7 @@ const ORDER_KEYS = [
   "customerNotes",
   "productSummary",
   "fulfillmentConflict",
+  "kitchenStatus",
 ];
 
 const ITEM_HEADERS = [
@@ -95,12 +97,14 @@ const PRODUCTION_HEADERS = [
 
 const KITCHEN_HEADERS = [
   "ID pedido",
+  "Status",
   "Fecha y hora",
   "Cliente",
   "Telefono",
   "Entrega o recogida",
   "Notas",
 ];
+const KITCHEN_MAX_COLUMNS = KITCHEN_HEADERS.length + 10;
 
 function quoteSheetTitle(title) {
   return `'${title.replaceAll("'", "''")}'`;
@@ -154,10 +158,23 @@ function isKitchenProduct(item) {
   return item.isLogistics !== "SI" && item.isLogistics !== true;
 }
 
+function kitchenStatus(order) {
+  return String(order.kitchenStatus || "").toLowerCase() === "entregado"
+    ? "Entregado"
+    : "Confirmado";
+}
+
 function buildKitchenTable(orders, itemsByOrder) {
+  const sortedOrders = [...orders].sort((left, right) => {
+    const statusDifference =
+      Number(kitchenStatus(left) === "Entregado") -
+      Number(kitchenStatus(right) === "Entregado");
+    if (statusDifference) return statusDifference;
+    return String(right.receivedAt).localeCompare(String(left.receivedAt));
+  });
   const productNames = [
     ...new Set(
-      orders.flatMap((order) =>
+      sortedOrders.flatMap((order) =>
         (itemsByOrder.get(String(order.orderId)) || [])
           .filter(isKitchenProduct)
           .map((item) => item.productName)
@@ -176,12 +193,13 @@ function buildKitchenTable(orders, itemsByOrder) {
     "",
     "",
     "",
+    "",
     ...productNames.map((_, index) => {
       const column = columnName(KITCHEN_HEADERS.length + index + 1);
-      return `=SUM(${column}3:${column})`;
+      return `=SUMIF($B$3:$B,"Confirmado",${column}$3:${column})`;
     }),
   ];
-  const orderRows = orders.map((order) => {
+  const orderRows = sortedOrders.map((order) => {
     const quantities = new Map();
     for (const item of itemsByOrder.get(String(order.orderId)) || []) {
       if (!isKitchenProduct(item)) continue;
@@ -193,6 +211,7 @@ function buildKitchenTable(orders, itemsByOrder) {
 
     return [
       order.orderId,
+      kitchenStatus(order),
       receivedAtLabel(order.receivedAt),
       order.customerName,
       order.phone,
@@ -279,24 +298,34 @@ class GoogleSheetsOrderStore {
   async formatWorksheets() {
     const response = await this.sheets.spreadsheets.get({
       spreadsheetId: this.config.spreadsheetId,
-      fields: "sheets.properties(sheetId,title)",
+      fields:
+        "sheets.properties(sheetId,title),sheets.conditionalFormats",
     });
-    const sheetIds = new Map(
+    const sheetsByTitle = new Map(
       (response.data.sheets || []).map((sheet) => [
         sheet.properties.title,
-        sheet.properties.sheetId,
+        sheet,
       ]),
     );
-    const kitchenSheetId = sheetIds.get(this.config.kitchenSheet);
+    const kitchenSheet = sheetsByTitle.get(this.config.kitchenSheet);
+    const kitchenSheetId = kitchenSheet?.properties.sheetId;
     if (kitchenSheetId === undefined) return;
 
-    const requests = [
+    const requests = (kitchenSheet.conditionalFormats || [])
+      .map((_, index) => ({
+        deleteConditionalFormatRule: {
+          sheetId: kitchenSheetId,
+          index,
+        },
+      }))
+      .reverse();
+    requests.push(
       {
         updateSheetProperties: {
           properties: {
             sheetId: kitchenSheetId,
             hidden: false,
-            gridProperties: { frozenRowCount: 2, frozenColumnCount: 1 },
+            gridProperties: { frozenRowCount: 2, frozenColumnCount: 2 },
           },
           fields:
             "hidden,gridProperties.frozenRowCount,gridProperties.frozenColumnCount",
@@ -309,7 +338,7 @@ class GoogleSheetsOrderStore {
             startRowIndex: 0,
             endRowIndex: 1,
             startColumnIndex: 0,
-            endColumnIndex: 16,
+            endColumnIndex: KITCHEN_MAX_COLUMNS,
           },
           cell: {
             userEnteredFormat: {
@@ -331,7 +360,7 @@ class GoogleSheetsOrderStore {
             startRowIndex: 1,
             endRowIndex: 2,
             startColumnIndex: 0,
-            endColumnIndex: 16,
+            endColumnIndex: KITCHEN_MAX_COLUMNS,
           },
           cell: {
             userEnteredFormat: {
@@ -349,15 +378,63 @@ class GoogleSheetsOrderStore {
             sheetId: kitchenSheetId,
             dimension: "COLUMNS",
             startIndex: 0,
-            endIndex: 16,
+            endIndex: KITCHEN_MAX_COLUMNS,
           },
           properties: { hiddenByUser: false },
           fields: "hiddenByUser",
         },
       },
-    ];
+      {
+        setDataValidation: {
+          range: {
+            sheetId: kitchenSheetId,
+            startRowIndex: 2,
+            startColumnIndex: 1,
+            endColumnIndex: 2,
+          },
+          rule: {
+            condition: {
+              type: "ONE_OF_LIST",
+              values: [
+                { userEnteredValue: "Confirmado" },
+                { userEnteredValue: "Entregado" },
+              ],
+            },
+            strict: true,
+            showCustomUi: true,
+          },
+        },
+      },
+      {
+        addConditionalFormatRule: {
+          index: 0,
+          rule: {
+            ranges: [
+              {
+                sheetId: kitchenSheetId,
+                startRowIndex: 2,
+                startColumnIndex: 0,
+                endColumnIndex: KITCHEN_MAX_COLUMNS,
+              },
+            ],
+            booleanRule: {
+              condition: {
+                type: "CUSTOM_FORMULA",
+                values: [{ userEnteredValue: '=$B3="Entregado"' }],
+              },
+              format: {
+                backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 },
+                textFormat: {
+                  foregroundColor: { red: 0.4, green: 0.4, blue: 0.4 },
+                },
+              },
+            },
+          },
+        },
+      },
+    );
 
-    [190, 150, 150, 125, 180, 300].forEach(
+    [190, 110, 150, 150, 125, 180, 300].forEach(
       (pixelSize, columnIndex) => {
         requests.push({
           updateDimensionProperties: {
@@ -379,7 +456,7 @@ class GoogleSheetsOrderStore {
           sheetId: kitchenSheetId,
           dimension: "COLUMNS",
           startIndex: KITCHEN_HEADERS.length,
-          endIndex: 16,
+          endIndex: KITCHEN_MAX_COLUMNS,
         },
         properties: { pixelSize: 150 },
         fields: "pixelSize",
@@ -391,7 +468,7 @@ class GoogleSheetsOrderStore {
       this.config.itemsSheet,
       this.config.productionSheet,
     ]) {
-      const sheetId = sheetIds.get(title);
+      const sheetId = sheetsByTitle.get(title)?.properties.sheetId;
       if (sheetId === undefined || sheetId === kitchenSheetId) continue;
       requests.push({
         updateSheetProperties: {
@@ -549,7 +626,8 @@ class GoogleSheetsOrderStore {
     });
   }
 
-  async refreshKitchenViewUnlocked() {
+  async refreshKitchenViewUnlocked({ syncStatuses = true } = {}) {
+    if (syncStatuses) await this.syncKitchenStatusesUnlocked();
     const orders = await this.listOrders();
     const itemsByOrder = new Map();
 
@@ -572,6 +650,64 @@ class GoogleSheetsOrderStore {
       requestBody: { values: table.values },
     });
     return table;
+  }
+
+  async syncKitchenStatusesUnlocked() {
+    const kitchenTitle = quoteSheetTitle(this.config.kitchenSheet);
+    const response = await this.sheets.spreadsheets.values.get({
+      spreadsheetId: this.config.spreadsheetId,
+      range: `${kitchenTitle}!A3:B`,
+    });
+    const selectedStatuses = new Map(
+      (response.data.values || [])
+        .map(([orderId, status]) => [
+          String(orderId || ""),
+          String(status || "").toLowerCase() === "entregado"
+            ? "Entregado"
+            : String(status || "").toLowerCase() === "confirmado"
+              ? "Confirmado"
+              : "",
+        ])
+        .filter(([orderId, status]) => orderId && status),
+    );
+    if (!selectedStatuses.size) return 0;
+
+    const orders = await this.listOrders();
+    const updates = orders
+      .map((order) => ({
+        order,
+        status: selectedStatuses.get(String(order.orderId)),
+      }))
+      .filter(
+        ({ order, status }) =>
+          status && kitchenStatus(order) !== status,
+      );
+    if (!updates.length) return 0;
+
+    const statusColumn = columnName(ORDER_HEADERS.length);
+    const ordersTitle = quoteSheetTitle(this.config.ordersSheet);
+    await this.sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: this.config.spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: updates.map(({ order, status }) => ({
+          range: `${ordersTitle}!${statusColumn}${order.sheetRow}`,
+          values: [[status]],
+        })),
+      },
+    });
+    return updates.length;
+  }
+
+  async syncKitchenView() {
+    return this.enqueue(async () => {
+      const updated = await this.syncKitchenStatusesUnlocked();
+      if (!updated) return { updated, table: null };
+      const table = await this.refreshKitchenViewUnlocked({
+        syncStatuses: false,
+      });
+      return { updated, table };
+    });
   }
 
   async refreshProductionSummary() {
@@ -641,5 +777,6 @@ module.exports = {
   PRODUCTION_HEADERS,
   columnName,
   fulfillmentLabel,
+  kitchenStatus,
   quoteSheetTitle,
 };
