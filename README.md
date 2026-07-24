@@ -46,8 +46,9 @@ same rows.
 - Brampton and Mississauga delivery fee calculation.
 - Allowlist safety control that disables automation for every unapproved chat.
 - Fulfillment selection derived from catalog items.
-- A single visible worksheet with one row per product and clear quantities.
+- A single visible worksheet with one row per order and product columns.
 - Technical worksheets hidden automatically without deleting source data.
+- Safe LID-to-phone resolution for current WhatsApp contact identifiers.
 - Customer confirmation only after a successful Sheets write.
 - Node.js native test suite and GitHub Actions CI.
 - Secrets, authentication state, QR images, and runtime logs excluded from Git.

@@ -35,16 +35,76 @@ async function loadOrderWithRetry(message) {
   throw lastError;
 }
 
-async function customerIdentity(message) {
-  try {
-    const contact = await message.getContact();
-    return {
-      name: contact.pushname || contact.name || "",
-      phone: contact.number || "",
-    };
-  } catch {
-    return { name: "", phone: "" };
+function phoneFromWhatsAppId(value) {
+  const serialized = String(value || "");
+  if (!/@(?:c\.us|s\.whatsapp\.net)$/i.test(serialized)) return "";
+  return serialized.replace(/@.+$/, "").replace(/\D/g, "");
+}
+
+async function resolvePhoneNumber(client, chatId, contact) {
+  if (String(chatId).endsWith("@lid")) {
+    try {
+      const mappings = await client.getContactLidAndPhone([chatId]);
+      const phone = phoneFromWhatsAppId(mappings?.[0]?.pn);
+      if (phone) return phone;
+    } catch {
+      return "";
+    }
+    return "";
   }
+
+  return (
+    phoneFromWhatsAppId(contact?.id?._serialized) ||
+    phoneFromWhatsAppId(chatId) ||
+    String(contact?.number || "").replace(/\D/g, "")
+  );
+}
+
+async function customerIdentity(message, client) {
+  let contact;
+  try {
+    contact = await message.getContact();
+  } catch {}
+
+  return {
+    name: contact?.pushname || contact?.name || "",
+    phone: await resolvePhoneNumber(client, message.from, contact),
+  };
+}
+
+async function reconcileCustomerPhones({ client, store, logger = console }) {
+  const orders = await store.listOrders();
+  const lidChatIds = [
+    ...new Set(
+      orders
+        .map((order) => order.chatId)
+        .filter((chatId) => String(chatId).endsWith("@lid")),
+    ),
+  ];
+  if (!lidChatIds.length) return 0;
+
+  const mappings = await client.getContactLidAndPhone(lidChatIds);
+  const phonesByLid = new Map(
+    (mappings || [])
+      .map((mapping) => [
+        mapping.lid,
+        phoneFromWhatsAppId(mapping.pn),
+      ])
+      .filter(([, phone]) => phone),
+  );
+  let updated = 0;
+
+  for (const order of orders) {
+    const phone = phonesByLid.get(order.chatId);
+    if (!phone || order.phone === phone) continue;
+    await store.updateOrder(order.orderId, { phone });
+    updated += 1;
+  }
+
+  if (updated) {
+    logger.log(`Telefonos reales actualizados: ${updated} pedido(s).`);
+  }
+  return updated;
 }
 
 function addGrandTotal(order, patch) {
@@ -174,7 +234,17 @@ function createWhatsAppClient({ config, store, logger = console }) {
   });
 
   client.on("authenticated", () => logger.log("WhatsApp autenticado."));
-  client.on("ready", () => logger.log("WhatsApp listo para recibir pedidos."));
+  client.on("ready", async () => {
+    logger.log("WhatsApp listo para recibir pedidos.");
+    try {
+      await reconcileCustomerPhones({ client, store, logger });
+    } catch (error) {
+      logger.error(
+        "No se pudieron actualizar los telefonos asociados a los LID:",
+        error,
+      );
+    }
+  });
   client.on("auth_failure", (error) =>
     logger.error("Fallo la autenticacion de WhatsApp:", error),
   );
@@ -192,7 +262,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
       if (message.type === "order") {
         logger.log(`Carrito recibido: ${message.orderId || "sin ID"}`);
         const order = await loadOrderWithRetry(message);
-        const customer = await customerIdentity(message);
+        const customer = await customerIdentity(message, client);
         const normalized = normalizeOrder({
           message,
           order,
@@ -299,4 +369,7 @@ module.exports = {
   handleFulfillmentText,
   handleLocation,
   loadOrderWithRetry,
+  phoneFromWhatsAppId,
+  reconcileCustomerPhones,
+  resolvePhoneNumber,
 };

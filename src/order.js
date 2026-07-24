@@ -98,7 +98,10 @@ function normalizeOrder({
       receivedAt,
       orderId,
       phone:
-        text(customerPhone) || text(message.from).replace(/@.+$/, ""),
+        text(customerPhone) ||
+        (/@(?:c\.us|s\.whatsapp\.net)$/i.test(text(message.from))
+          ? text(message.from).replace(/@.+$/, "")
+          : ""),
       customerName: text(customerName),
       currency,
       subtotal: productsTotal,
