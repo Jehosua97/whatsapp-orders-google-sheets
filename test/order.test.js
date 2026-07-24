@@ -78,6 +78,22 @@ test("separa Delivery Brampton de los productos de cocina", () => {
   assert.equal(result.items[1].isLogistics, true);
 });
 
+test("guarda el horario configurable cuando el cliente recoge", () => {
+  const result = normalizeOrder({
+    message: { orderId: "WA-PICKUP", from: "1@lid" },
+    pickupTimeWindow: "4:30 p.m. a 5:30 p.m.",
+    order: {
+      products: [
+        { id: "bolillo", name: "Bolillo", quantity: 2, price: 1000 },
+        { id: "pickup", name: "Recoger", quantity: 1, price: 0 },
+      ],
+    },
+  });
+
+  assert.equal(result.summary.fulfillmentType, "PICKUP");
+  assert.equal(result.summary.timeWindow, "4:30 p.m. a 5:30 p.m.");
+});
+
 test("rechaza carritos vacios", () => {
   assert.throws(
     () =>

@@ -48,6 +48,8 @@ function readConfig() {
       brampton: number("BRAMPTON_DELIVERY_FEE", 5),
       mississauga: number("MISSISSAUGA_DELIVERY_FEE", 8),
     },
+    pickupTimeWindow:
+      process.env.PICKUP_TIME_WINDOW?.trim() || "5:00 p.m. a 6:00 p.m.",
     automationAllowedChatIds: new Set(
       (process.env.WHATSAPP_AUTOMATION_ALLOWLIST || "")
         .split(",")

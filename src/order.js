@@ -42,6 +42,7 @@ function normalizeOrder({
   customerPhone = "",
   priceDivisor = 1000,
   deliveryFees = { brampton: 5, mississauga: 8 },
+  pickupTimeWindow = "5:00 p.m. a 6:00 p.m.",
 }) {
   if (!message?.orderId) {
     throw new Error("El mensaje de pedido no contiene orderId");
@@ -114,7 +115,8 @@ function normalizeOrder({
       address: "",
       postalCode: "",
       requestedDate: "",
-      timeWindow: "",
+      timeWindow:
+        selection?.fulfillmentType === "PICKUP" ? pickupTimeWindow : "",
       deliveryFee,
       grandTotal,
       scheduleStatus: "PENDIENTE",

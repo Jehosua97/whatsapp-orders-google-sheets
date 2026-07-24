@@ -132,6 +132,7 @@ WHATSAPP_PHONE_NUMBER=
 WHATSAPP_PRICE_DIVISOR=1000
 BRAMPTON_DELIVERY_FEE=5
 MISSISSAUGA_DELIVERY_FEE=8
+PICKUP_TIME_WINDOW=5:00 p.m. a 6:00 p.m.
 WHATSAPP_AUTOMATION_ALLOWLIST=
 AUTO_REPLY_COOLDOWN_HOURS=24
 AUTO_REPLY_STATE_FILE=.data/auto-reply-state.json
@@ -170,6 +171,9 @@ The service recognizes these items as logistics, excludes them from kitchen
 quantities, applies the configured fee once, and asks only for the missing
 address or schedule information. Conflicting selections are flagged for manual
 review.
+
+`PICKUP_TIME_WINDOW` controls the pickup window included in the automatic
+customer reply and in the kitchen worksheet notes.
 
 ## Testing
 

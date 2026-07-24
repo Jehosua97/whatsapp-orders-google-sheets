@@ -119,6 +119,21 @@ function addGrandTotal(order, patch) {
   };
 }
 
+function pickupReply(timeWindow) {
+  return (
+    "Perfecto, registramos que vas a recoger. " +
+    "En breve te mandaremos la direccion donde puedes recogerlo " +
+    `en el horario de ${timeWindow}.`
+  );
+}
+
+function locationReceivedReply() {
+  return (
+    "Gracias, recibimos tu ubicacion. " +
+    "En breve validaremos el horario de entrega."
+  );
+}
+
 async function handleLocation({ message, store, config }) {
   const pending = await store.getPendingOrderByChat(message.from);
   if (!pending) return false;
@@ -128,7 +143,7 @@ async function handleLocation({ message, store, config }) {
     message.location?.address ||
     message.location?.name ||
     "";
-  const city = detectCity(description);
+  const city = detectCity(description) || pending.city;
   const deliveryFee = deliveryFeeFor(city, config.deliveryFees);
   const patch = addGrandTotal(pending, {
     fulfillmentType: "DELIVERY",
@@ -144,17 +159,7 @@ async function handleLocation({ message, store, config }) {
   });
 
   await store.updateOrder(pending.orderId, patch);
-  if (city) {
-    await message.reply(
-      `Gracias, recibimos tu ubicacion en ${city === "BRAMPTON" ? "Brampton" : "Mississauga"}. ` +
-        `La entrega cuesta ${formatMoney(deliveryFee, pending.currency)}. ` +
-        "Te confirmaremos personalmente la fecha y el horario disponible.",
-    );
-  } else {
-    await message.reply(
-      "Gracias, recibimos tu ubicacion. Confirmanos si corresponde a Brampton o Mississauga y te propondremos un horario.",
-    );
-  }
+  await message.reply(locationReceivedReply());
   return true;
 }
 
@@ -166,12 +171,13 @@ async function handleFulfillmentText({ message, store, config }) {
   if (!parsed) return false;
 
   const patch = addGrandTotal(pending, parsed);
+  if (parsed.fulfillmentType === "PICKUP") {
+    patch.timeWindow = config.pickupTimeWindow;
+  }
   await store.updateOrder(pending.orderId, patch);
 
   if (parsed.fulfillmentType === "PICKUP") {
-    await message.reply(
-      "Perfecto, lo prepararemos para recoger. Te confirmaremos personalmente la fecha y una ventana de 30 minutos.",
-    );
+    await message.reply(pickupReply(config.pickupTimeWindow));
   } else if (parsed.city) {
     const cityName =
       parsed.city === "BRAMPTON" ? "Brampton" : "Mississauga";
@@ -270,6 +276,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
           customerPhone: customer.phone,
           priceDivisor: config.whatsappPriceDivisor,
           deliveryFees: config.deliveryFees,
+          pickupTimeWindow: config.pickupTimeWindow,
         });
         const result = await store.saveOrder(normalized);
 
@@ -299,9 +306,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
               "Vemos mas de una opcion de entrega o recogida. Dinos cual deseas conservar y te ayudaremos a corregirla.",
             );
           } else if (normalized.summary.fulfillmentType === "PICKUP") {
-            lines.push(
-              "Registramos que vas a recoger. Que dia te gustaria pasar? Te confirmaremos una ventana de 30 minutos.",
-            );
+            lines.push(pickupReply(config.pickupTimeWindow));
           } else if (normalized.summary.fulfillmentType === "DELIVERY") {
             const city =
               normalized.summary.city === "BRAMPTON"
@@ -369,7 +374,9 @@ module.exports = {
   handleFulfillmentText,
   handleLocation,
   loadOrderWithRetry,
+  locationReceivedReply,
   phoneFromWhatsAppId,
+  pickupReply,
   reconcileCustomerPhones,
   resolvePhoneNumber,
 };
