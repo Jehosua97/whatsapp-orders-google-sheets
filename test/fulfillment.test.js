@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const {
   detectCity,
   detectPostalCode,
+  deriveFulfillmentFromItems,
   parseFulfillmentText,
 } = require("../src/fulfillment");
 
@@ -45,4 +46,16 @@ test("reconoce recogida sin costo", () => {
 test("ignora conversaciones que no describen recepcion", () => {
   assert.equal(parseFulfillmentText("Muchas gracias", fees), null);
   assert.equal(detectPostalCode("sin codigo"), "");
+});
+
+test("detecta conflicto cuando el carrito contiene dos modalidades", () => {
+  const result = deriveFulfillmentFromItems(
+    [
+      { productName: "Delivery en Brampton" },
+      { productName: "Recojer" },
+    ],
+    fees,
+  );
+  assert.equal(result.conflict, true);
+  assert.equal(result.selection, null);
 });

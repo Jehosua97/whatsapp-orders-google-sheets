@@ -68,6 +68,7 @@
         <section id="detail" hidden>
           <h2 id="order-title"></h2>
           <div class="muted" id="customer"></div>
+          <p id="product-summary"></p>
           <form id="order-form">
             <div class="grid">
               <label>Modalidad<select name="fulfillmentType" required><option value="">Seleccionar</option><option value="PICKUP">Recoger</option><option value="DELIVERY">Entrega</option></select></label>
@@ -127,6 +128,7 @@
         document.querySelector("#detail").hidden = false;
         document.querySelector("#order-title").textContent = `Pedido ${order.orderId}`;
         document.querySelector("#customer").textContent = `${order.customerName || "Cliente"} | ${order.phone || "Sin telefono"}`;
+        document.querySelector("#product-summary").textContent = order.productSummary || "Sin resumen de productos";
         for (const [key, value] of Object.entries(order)) if (form.elements[key]) form.elements[key].value = value ?? "";
         document.querySelector("#products-total").textContent = money(order.total, order.currency);
         document.querySelector("#delivery-total").textContent = money(order.deliveryFee, order.currency);

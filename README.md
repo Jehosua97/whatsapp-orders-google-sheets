@@ -44,6 +44,9 @@ same rows.
 - QR and phone-number pairing modes.
 - Natural-language pickup and delivery capture from customer replies.
 - Brampton and Mississauga delivery fee calculation.
+- Allowlist safety control that disables automation for every unapproved chat.
+- Fulfillment selection derived from catalog items.
+- Production worksheet grouped by confirmed date and product quantity.
 - Local administrative panel for scheduling and confirmation.
 - Customer confirmation only after a successful Sheets write.
 - Node.js native test suite and GitHub Actions CI.
@@ -114,6 +117,7 @@ GOOGLE_SPREADSHEET_ID=your_spreadsheet_id
 GOOGLE_SERVICE_ACCOUNT_FILE=.secrets/google-service-account.json
 GOOGLE_ORDERS_SHEET=Orders
 GOOGLE_ITEMS_SHEET=Order Items
+GOOGLE_PRODUCTION_SHEET=Production
 SEND_CUSTOMER_CONFIRMATION=true
 WHATSAPP_AUTH_PATH=.wwebjs_auth
 WHATSAPP_PHONE_NUMBER=
@@ -122,6 +126,9 @@ BRAMPTON_DELIVERY_FEE=5
 MISSISSAUGA_DELIVERY_FEE=8
 ADMIN_HOST=127.0.0.1
 ADMIN_PORT=3030
+WHATSAPP_AUTOMATION_ALLOWLIST=
+AUTO_REPLY_COOLDOWN_HOURS=24
+AUTO_REPLY_STATE_FILE=.data/auto-reply-state.json
 ```
 
 Start the service:
@@ -144,6 +151,30 @@ From the panel, an operator can select pickup or delivery, set Brampton or
 Mississauga, capture the address, choose a date and time window, calculate the
 final total, and send a confirmation through WhatsApp.
 
+### Safe test mode
+
+Automation is disabled by default. Add only approved test chat IDs:
+
+```dotenv
+WHATSAPP_AUTOMATION_ALLOWLIST=123456789@lid
+```
+
+Messages and carts from every other chat are ignored. Multiple test IDs can be
+separated by commas.
+
+### Catalog fulfillment items
+
+Add exactly one fulfillment item to each cart:
+
+- `Delivery in Mississauga`
+- `Delivery in Brampton`
+- `Recoger`
+
+The service recognizes these items as logistics, excludes them from kitchen
+quantities, applies the configured fee once, and asks only for the missing
+address or schedule information. Conflicting selections are flagged for manual
+review.
+
 ## Testing
 
 ```powershell
@@ -152,7 +183,8 @@ npm.cmd test
 
 The tests cover cart normalization, WhatsApp monetary units, spreadsheet row
 shape, pickup and delivery classification, city fees, final totals, and
-confirmation validation.
+confirmation validation. The `Production` worksheet includes only confirmed
+orders and groups quantities by requested date and product.
 
 ## Security
 

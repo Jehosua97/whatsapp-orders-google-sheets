@@ -29,6 +29,8 @@ const ORDER_HEADERS = [
   "Longitud",
   "Ultima actualizacion",
   "Notas del cliente",
+  "Resumen productos",
+  "Conflicto modalidad",
 ];
 
 const ORDER_KEYS = [
@@ -55,6 +57,8 @@ const ORDER_KEYS = [
   "longitude",
   "updatedAt",
   "customerNotes",
+  "productSummary",
+  "fulfillmentConflict",
 ];
 
 const ITEM_HEADERS = [
@@ -66,6 +70,7 @@ const ITEM_HEADERS = [
   "Precio unitario",
   "Moneda",
   "Total de linea",
+  "Es logistica",
 ];
 
 const ITEM_KEYS = [
@@ -77,6 +82,15 @@ const ITEM_KEYS = [
   "unitPrice",
   "currency",
   "lineTotal",
+  "isLogistics",
+];
+
+const PRODUCTION_HEADERS = [
+  "Fecha",
+  "ID del producto",
+  "Producto",
+  "Cantidad total",
+  "Pedidos",
 ];
 
 function quoteSheetTitle(title) {
@@ -134,6 +148,7 @@ class GoogleSheetsOrderStore {
     const definitions = [
       [this.config.ordersSheet, ORDER_HEADERS],
       [this.config.itemsSheet, ITEM_HEADERS],
+      [this.config.productionSheet, PRODUCTION_HEADERS],
     ];
 
     const missing = definitions.filter(([title]) => !existing.has(title));
@@ -215,7 +230,7 @@ class GoogleSheetsOrderStore {
     const title = quoteSheetTitle(this.config.itemsSheet);
     const response = await this.sheets.spreadsheets.values.get({
       spreadsheetId: this.config.spreadsheetId,
-      range: `${title}!A2:H`,
+      range: `${title}!A2:I`,
     });
     return (response.data.values || [])
       .map((row) => objectFromRow(row, ITEM_KEYS))
@@ -262,7 +277,7 @@ class GoogleSheetsOrderStore {
               values: [summaryRow(order.summary)],
             },
             {
-              range: `${itemsTitle}!A${nextItemRow}:H${lastItemRow}`,
+              range: `${itemsTitle}!A${nextItemRow}:I${lastItemRow}`,
               values: order.items.map(itemRow),
             },
           ],
@@ -297,12 +312,70 @@ class GoogleSheetsOrderStore {
       return updated;
     });
   }
+
+  async refreshProductionSummary() {
+    return this.enqueue(async () => {
+      const orders = await this.listOrders();
+      const confirmed = orders.filter((order) =>
+        ["CONFIRMADO", "EN_COCINA"].includes(order.status),
+      );
+      const groups = new Map();
+
+      for (const order of confirmed) {
+        if (!order.requestedDate) continue;
+        const items = await this.getOrderItems(order.orderId);
+        for (const item of items) {
+          if (item.isLogistics === "SI") continue;
+          const key = `${order.requestedDate}:${item.productId}`;
+          const current = groups.get(key) || {
+            date: order.requestedDate,
+            productId: item.productId,
+            productName: item.productName,
+            quantity: 0,
+            orders: [],
+          };
+          current.quantity += Number(item.quantity || 0);
+          current.orders.push(order.orderId);
+          groups.set(key, current);
+        }
+      }
+
+      const rows = [...groups.values()]
+        .sort(
+          (left, right) =>
+            left.date.localeCompare(right.date) ||
+            left.productName.localeCompare(right.productName),
+        )
+        .map((group) => [
+          group.date,
+          group.productId,
+          group.productName,
+          group.quantity,
+          group.orders.join(", "),
+        ]);
+      const title = quoteSheetTitle(this.config.productionSheet);
+      await this.sheets.spreadsheets.values.clear({
+        spreadsheetId: this.config.spreadsheetId,
+        range: `${title}!A2:E`,
+      });
+      if (rows.length) {
+        await this.sheets.spreadsheets.values.update({
+          spreadsheetId: this.config.spreadsheetId,
+          range: `${title}!A2:E${rows.length + 1}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: rows },
+        });
+      }
+      return rows;
+    });
+  }
 }
 
 module.exports = {
   GoogleSheetsOrderStore,
   ITEM_HEADERS,
   ORDER_HEADERS,
+  PRODUCTION_HEADERS,
   columnName,
   quoteSheetTitle,
 };

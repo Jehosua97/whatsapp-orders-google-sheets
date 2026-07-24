@@ -30,8 +30,9 @@ test("normaliza un carrito de WhatsApp", () => {
   assert.equal(result.summary.orderId, "WA-123");
   assert.equal(result.summary.phone, "19055550123");
   assert.equal(result.summary.customerName, "Ana");
-  assert.equal(result.summary.total, 20);
+  assert.equal(result.summary.total, 10);
   assert.equal(result.summary.status, "ESPERANDO_DATOS");
+  assert.equal(result.summary.productSummary, "4 x Concha de chocolate");
   assert.equal(result.items[0].quantity, 4);
   assert.equal(result.items[0].lineTotal, 10);
 });
@@ -46,8 +47,35 @@ test("produce filas con el numero correcto de columnas", () => {
     },
   });
 
-  assert.equal(summaryRow(result.summary).length, 23);
-  assert.equal(itemRow(result.items[0]).length, 8);
+  assert.equal(summaryRow(result.summary).length, 25);
+  assert.equal(itemRow(result.items[0]).length, 9);
+});
+
+test("separa Delivery Brampton de los productos de cocina", () => {
+  const result = normalizeOrder({
+    message: { orderId: "WA-DELIVERY", from: "1@lid" },
+    order: {
+      currency: "CAD",
+      total: 8500,
+      products: [
+        { id: "test", name: "Test", quantity: 1, price: 3500 },
+        {
+          id: "delivery-brampton",
+          name: "Delivery en Brampton",
+          quantity: 1,
+          price: 5000,
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.summary.total, 3.5);
+  assert.equal(result.summary.deliveryFee, 5);
+  assert.equal(result.summary.grandTotal, 8.5);
+  assert.equal(result.summary.fulfillmentType, "DELIVERY");
+  assert.equal(result.summary.city, "BRAMPTON");
+  assert.equal(result.summary.productSummary, "1 x Test");
+  assert.equal(result.items[1].isLogistics, true);
 });
 
 test("rechaza carritos vacios", () => {

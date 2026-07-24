@@ -27,6 +27,8 @@ function readConfig() {
     ),
     ordersSheet: process.env.GOOGLE_ORDERS_SHEET?.trim() || "Pedidos",
     itemsSheet: process.env.GOOGLE_ITEMS_SHEET?.trim() || "Productos",
+    productionSheet:
+      process.env.GOOGLE_PRODUCTION_SHEET?.trim() || "Produccion",
     sendCustomerConfirmation:
       process.env.SEND_CUSTOMER_CONFIRMATION !== "false",
     whatsappAuthPath: path.resolve(
@@ -45,6 +47,16 @@ function readConfig() {
     },
     adminHost: process.env.ADMIN_HOST?.trim() || "127.0.0.1",
     adminPort: number("ADMIN_PORT", 3030),
+    automationAllowedChatIds: new Set(
+      (process.env.WHATSAPP_AUTOMATION_ALLOWLIST || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+    autoReplyCooldownHours: number("AUTO_REPLY_COOLDOWN_HOURS", 24),
+    autoReplyStateFile: path.resolve(
+      process.env.AUTO_REPLY_STATE_FILE || ".data/auto-reply-state.json",
+    ),
   };
 }
 

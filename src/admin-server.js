@@ -68,6 +68,7 @@ function confirmationMessage(order, items) {
       ? "Recogida"
       : `Entrega en ${order.city === "BRAMPTON" ? "Brampton" : "Mississauga"}`;
   const products = items
+    .filter((item) => item.isLogistics !== "SI")
     .map((item) => `${item.quantity} x ${item.productName}`)
     .join("\n");
 
@@ -169,6 +170,7 @@ function createAdminServer({ config, store, whatsapp, logger = console }) {
         status: "CONFIRMADO",
         scheduleStatus: "CONFIRMADO",
       });
+      await store.refreshProductionSummary();
       response.json(confirmed);
     } catch (error) {
       next(error);

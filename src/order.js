@@ -1,5 +1,10 @@
 "use strict";
 
+const {
+  classifyFulfillmentProductName,
+  deriveFulfillmentFromItems,
+} = require("./fulfillment");
+
 function text(value) {
   return value === undefined || value === null ? "" : String(value);
 }
@@ -8,6 +13,10 @@ function numberOrBlank(value) {
   if (value === undefined || value === null || value === "") return "";
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : text(value);
+}
+
+function yesNo(value) {
+  return value === true || String(value).toUpperCase() === "SI" ? "SI" : "NO";
 }
 
 function whatsappMoney(value, divisor = 1000) {
@@ -32,6 +41,7 @@ function normalizeOrder({
   customerName = "",
   customerPhone = "",
   priceDivisor = 1000,
+  deliveryFees = { brampton: 5, mississauga: 8 },
 }) {
   if (!message?.orderId) {
     throw new Error("El mensaje de pedido no contiene orderId");
@@ -48,6 +58,9 @@ function normalizeOrder({
   const items = order.products.map((product) => {
     const unitPrice = whatsappMoney(product.price, priceDivisor);
     const quantity = numberOrBlank(product.quantity);
+    const isLogistics = Boolean(
+      classifyFulfillmentProductName(product.name),
+    );
     return {
       receivedAt,
       orderId,
@@ -57,10 +70,28 @@ function normalizeOrder({
       unitPrice,
       currency: text(product.currency || currency),
       lineTotal: lineTotal(unitPrice, quantity),
+      isLogistics,
     };
   });
 
-  const productsTotal = whatsappMoney(order.total, priceDivisor);
+  const foodItems = items.filter((item) => !item.isLogistics);
+  const productsTotal = foodItems.reduce(
+    (total, item) => total + Number(item.lineTotal || 0),
+    0,
+  );
+  const fulfillment = deriveFulfillmentFromItems(items, deliveryFees);
+  const selection = fulfillment.selection;
+  const deliveryFee = selection?.deliveryFee ?? "";
+  const grandTotal =
+    deliveryFee === "" ? productsTotal : productsTotal + Number(deliveryFee);
+  const status = fulfillment.conflict
+    ? "REVISION_MANUAL"
+    : selection?.fulfillmentType === "PICKUP"
+      ? "ESPERANDO_HORARIO"
+      : "ESPERANDO_DATOS";
+  const productSummary = foodItems
+    .map((item) => `${item.quantity} x ${item.productName}`)
+    .join(", ");
 
   return {
     summary: {
@@ -70,24 +101,26 @@ function normalizeOrder({
         text(customerPhone) || text(message.from).replace(/@.+$/, ""),
       customerName: text(customerName),
       currency,
-      subtotal: whatsappMoney(order.subtotal, priceDivisor),
+      subtotal: productsTotal,
       total: productsTotal,
-      status: "ESPERANDO_DATOS",
+      status,
       messageId: text(message.id?._serialized),
       chatId: text(message.from),
-      fulfillmentType: "",
-      city: "",
+      fulfillmentType: selection?.fulfillmentType || "",
+      city: selection?.city || "",
       address: "",
       postalCode: "",
       requestedDate: "",
       timeWindow: "",
-      deliveryFee: "",
-      grandTotal: productsTotal,
+      deliveryFee,
+      grandTotal,
       scheduleStatus: "PENDIENTE",
       latitude: "",
       longitude: "",
       updatedAt: receivedAt,
       customerNotes: "",
+      productSummary,
+      fulfillmentConflict: fulfillment.conflict,
     },
     items,
   };
@@ -118,6 +151,8 @@ function summaryRow(summary) {
     summary.longitude,
     summary.updatedAt,
     summary.customerNotes,
+    summary.productSummary,
+    yesNo(summary.fulfillmentConflict),
   ];
 }
 
@@ -131,6 +166,7 @@ function itemRow(item) {
     item.unitPrice,
     item.currency,
     item.lineTotal,
+    yesNo(item.isLogistics),
   ];
 }
 

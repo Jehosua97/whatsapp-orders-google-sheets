@@ -3,6 +3,7 @@
 const path = require("node:path");
 const QRCode = require("qrcode");
 const { Client, LocalAuth } = require("whatsapp-web.js");
+const { AutoReplyState, isAllowedChat } = require("./auto-reply-state");
 const {
   deliveryFeeFor,
   detectCity,
@@ -128,6 +129,10 @@ async function handleFulfillmentText({ message, store, config }) {
 
 function createWhatsAppClient({ config, store, logger = console }) {
   const qrFile = path.resolve("whatsapp-qr.png");
+  const autoReplyState = new AutoReplyState(
+    config.autoReplyStateFile,
+    config.autoReplyCooldownHours,
+  );
   const client = new Client({
     authStrategy: new LocalAuth({
       clientId: "lacenaduria",
@@ -179,6 +184,11 @@ function createWhatsAppClient({ config, store, logger = console }) {
 
   client.on("message", async (message) => {
     try {
+      if (!isAllowedChat(message.from, config.automationAllowedChatIds)) {
+        logger.log(`Mensaje ignorado por lista permitida: ${message.from}`);
+        return;
+      }
+
       if (message.type === "order") {
         logger.log(`Carrito recibido: ${message.orderId || "sin ID"}`);
         const order = await loadOrderWithRetry(message);
@@ -189,6 +199,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
           customerName: customer.name,
           customerPhone: customer.phone,
           priceDivisor: config.whatsappPriceDivisor,
+          deliveryFees: config.deliveryFees,
         });
         const result = await store.saveOrder(normalized);
 
@@ -201,16 +212,37 @@ function createWhatsAppClient({ config, store, logger = console }) {
           `Pedido guardado en Google Sheets: ${normalized.summary.orderId}`,
         );
         if (config.sendCustomerConfirmation) {
-          await message.reply(
-            [
-              "Gracias, ya recibimos tu carrito.",
-              `Pedido: ${normalized.summary.orderId}`,
-              `Productos: ${formatMoney(normalized.summary.total, normalized.summary.currency)}`,
-              "",
-              "Prefieres recoger o necesitas entrega?",
-              "Para entrega, comparte tu ubicacion desde el clip de WhatsApp. Para recoger, dinos que dia te gustaria pasar. Te confirmaremos personalmente el horario.",
-            ].join("\n"),
-          );
+          const lines = [
+            "Gracias, ya recibimos tu carrito.",
+            `Pedido: ${normalized.summary.orderId}`,
+            `Productos: ${normalized.summary.productSummary || "Sin productos de cocina"}`,
+            `Subtotal: ${formatMoney(normalized.summary.total, normalized.summary.currency)}`,
+            "",
+          ];
+          if (normalized.summary.fulfillmentConflict) {
+            lines.push(
+              "Vemos mas de una opcion de entrega o recogida. Dinos cual deseas conservar y te ayudaremos a corregirla.",
+            );
+          } else if (normalized.summary.fulfillmentType === "PICKUP") {
+            lines.push(
+              "Registramos que vas a recoger. Que dia te gustaria pasar? Te confirmaremos una ventana de 30 minutos.",
+            );
+          } else if (normalized.summary.fulfillmentType === "DELIVERY") {
+            const city =
+              normalized.summary.city === "BRAMPTON"
+                ? "Brampton"
+                : "Mississauga";
+            lines.push(
+              `Registramos entrega en ${city} por ${formatMoney(normalized.summary.deliveryFee, normalized.summary.currency)}.`,
+              "Comparte tu ubicacion desde el clip de WhatsApp y te confirmaremos la fecha y el horario.",
+            );
+          } else {
+            lines.push(
+              "No encontramos una opcion de entrega o recogida en el carrito. Dinos si prefieres recoger o si necesitas entrega en Brampton o Mississauga.",
+            );
+          }
+          await message.reply(lines.join("\n"));
+          autoReplyState.markSent(message.from);
         }
         return;
       }
@@ -221,8 +253,25 @@ function createWhatsAppClient({ config, store, logger = console }) {
       }
 
       if (message.type === "chat") {
-        await handleFulfillmentText({ message, store, config });
+        const handled = await handleFulfillmentText({
+          message,
+          store,
+          config,
+        });
+        if (handled) return;
       }
+
+      const pending = await store.getPendingOrderByChat(message.from);
+      if (pending || !autoReplyState.shouldSend(message.from)) return;
+
+      await message.reply(
+        [
+          "Nos estamos actualizando para atenderte mejor.",
+          "Puedes intentar hacer tu pedido desde el catalogo que aparece en la esquina superior derecha del chat.",
+          "Si necesitas ayuda, con gusto tomaremos tu pedido por mensaje aqui mismo.",
+        ].join("\n"),
+      );
+      autoReplyState.markSent(message.from);
     } catch (error) {
       logger.error("No se pudo procesar el mensaje de WhatsApp:", error);
       if (message.type === "order") {

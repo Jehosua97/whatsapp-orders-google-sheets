@@ -4,6 +4,7 @@ const ACTIVE_STATUSES = new Set([
   "ESPERANDO_DATOS",
   "ESPERANDO_HORARIO",
   "NUEVO",
+  "REVISION_MANUAL",
 ]);
 
 function normalizedText(value) {
@@ -33,6 +34,53 @@ function deliveryFeeFor(city, fees) {
   if (city === "BRAMPTON") return fees.brampton;
   if (city === "MISSISSAUGA") return fees.mississauga;
   return "";
+}
+
+function classifyFulfillmentProductName(value) {
+  const normalized = normalizedText(value);
+  const delivery =
+    /\b(delivery|entrega|envio)\b/.test(normalized);
+
+  if (delivery && /\bbrampton\b/.test(normalized)) {
+    return { fulfillmentType: "DELIVERY", city: "BRAMPTON" };
+  }
+  if (
+    delivery &&
+    /\bmississauga\b|\bmissisauga\b|\bmississuga\b/.test(normalized)
+  ) {
+    return { fulfillmentType: "DELIVERY", city: "MISSISSAUGA" };
+  }
+  if (/\b(recoger|recojer|recogida|pickup|pick up)\b/.test(normalized)) {
+    return { fulfillmentType: "PICKUP", city: "" };
+  }
+  return null;
+}
+
+function deriveFulfillmentFromItems(items, fees) {
+  const selections = items
+    .map((item) => classifyFulfillmentProductName(item.productName))
+    .filter(Boolean);
+  const unique = new Map(
+    selections.map((selection) => [
+      `${selection.fulfillmentType}:${selection.city}`,
+      selection,
+    ]),
+  );
+
+  if (unique.size === 0) return { selection: null, conflict: false };
+  if (unique.size > 1) return { selection: null, conflict: true };
+
+  const selection = [...unique.values()][0];
+  return {
+    selection: {
+      ...selection,
+      deliveryFee:
+        selection.fulfillmentType === "PICKUP"
+          ? 0
+          : deliveryFeeFor(selection.city, fees),
+    },
+    conflict: false,
+  };
 }
 
 function parseFulfillmentText(value, fees) {
@@ -75,7 +123,9 @@ function isActiveOrder(order) {
 
 module.exports = {
   ACTIVE_STATUSES,
+  classifyFulfillmentProductName,
   deliveryFeeFor,
+  deriveFulfillmentFromItems,
   detectCity,
   detectPostalCode,
   isActiveOrder,
