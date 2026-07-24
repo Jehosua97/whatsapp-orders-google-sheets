@@ -66,14 +66,16 @@ same rows.
 
 ## Data Model
 
-The only visible worksheet is `Pedidos para cocina`:
+The only visible worksheet is `Pedidos para cocina`. It uses one row per order
+and creates one quantity column per catalog product:
 
-| Date and time | Customer | Phone | Product | Quantity | Delivery or pickup | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
+| Order ID | Date and time | Customer | Phone | Delivery or pickup | Notes | Chocolate concha | Vanilla concha | Bolillo |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-Each catalog product has its own row. Delivery catalog items are used to fill
-the delivery-or-pickup column and are not counted as food. Technical order and
-item records remain in hidden worksheets for deduplication and future
+The second row shows the total quantity to prepare for each product. New
+products automatically become new columns. Delivery catalog items are used to
+fill the delivery-or-pickup column and are not counted as food. Technical order
+and item records remain in hidden worksheets for deduplication and future
 automation.
 
 ## Local Setup

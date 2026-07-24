@@ -94,15 +94,12 @@ const PRODUCTION_HEADERS = [
 ];
 
 const KITCHEN_HEADERS = [
+  "ID pedido",
   "Fecha y hora",
   "Cliente",
   "Telefono",
-  "Producto",
-  "Cantidad",
   "Entrega o recogida",
   "Notas",
-  "ID pedido",
-  "ID chat",
 ];
 
 function quoteSheetTitle(title) {
@@ -153,18 +150,65 @@ function kitchenNotes(order) {
     .join(" | ");
 }
 
-function kitchenRow(order, item) {
-  return [
-    receivedAtLabel(order.receivedAt),
-    order.customerName,
-    order.phone,
-    item.productName,
-    item.quantity,
-    fulfillmentLabel(order),
-    kitchenNotes(order),
-    order.orderId,
-    order.chatId,
+function isKitchenProduct(item) {
+  return item.isLogistics !== "SI" && item.isLogistics !== true;
+}
+
+function buildKitchenTable(orders, itemsByOrder) {
+  const productNames = [
+    ...new Set(
+      orders.flatMap((order) =>
+        (itemsByOrder.get(String(order.orderId)) || [])
+          .filter(isKitchenProduct)
+          .map((item) => item.productName)
+          .filter(Boolean),
+      ),
+    ),
+  ].sort((left, right) =>
+    left.localeCompare(right, "es", { sensitivity: "base" }),
+  );
+
+  const headers = [...KITCHEN_HEADERS, ...productNames];
+  const totalRow = [
+    "TOTAL A PREPARAR",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ...productNames.map((_, index) => {
+      const column = columnName(KITCHEN_HEADERS.length + index + 1);
+      return `=SUM(${column}3:${column})`;
+    }),
   ];
+  const orderRows = orders.map((order) => {
+    const quantities = new Map();
+    for (const item of itemsByOrder.get(String(order.orderId)) || []) {
+      if (!isKitchenProduct(item)) continue;
+      quantities.set(
+        item.productName,
+        (quantities.get(item.productName) || 0) + Number(item.quantity || 0),
+      );
+    }
+
+    return [
+      order.orderId,
+      receivedAtLabel(order.receivedAt),
+      order.customerName,
+      order.phone,
+      fulfillmentLabel(order),
+      kitchenNotes(order),
+      ...productNames.map((productName) => quantities.get(productName) || ""),
+    ];
+  });
+
+  return {
+    headers,
+    totalRow,
+    orderRows,
+    productNames,
+    values: [headers, totalRow, ...orderRows],
+  };
 }
 
 class GoogleSheetsOrderStore {
@@ -252,9 +296,10 @@ class GoogleSheetsOrderStore {
           properties: {
             sheetId: kitchenSheetId,
             hidden: false,
-            gridProperties: { frozenRowCount: 1 },
+            gridProperties: { frozenRowCount: 2, frozenColumnCount: 1 },
           },
-          fields: "hidden,gridProperties.frozenRowCount",
+          fields:
+            "hidden,gridProperties.frozenRowCount,gridProperties.frozenColumnCount",
         },
       },
       {
@@ -264,7 +309,7 @@ class GoogleSheetsOrderStore {
             startRowIndex: 0,
             endRowIndex: 1,
             startColumnIndex: 0,
-            endColumnIndex: KITCHEN_HEADERS.length,
+            endColumnIndex: 16,
           },
           cell: {
             userEnteredFormat: {
@@ -280,20 +325,39 @@ class GoogleSheetsOrderStore {
         },
       },
       {
+        repeatCell: {
+          range: {
+            sheetId: kitchenSheetId,
+            startRowIndex: 1,
+            endRowIndex: 2,
+            startColumnIndex: 0,
+            endColumnIndex: 16,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: { red: 0.85, green: 0.93, blue: 0.82 },
+              textFormat: { bold: true },
+              verticalAlignment: "MIDDLE",
+            },
+          },
+          fields: "userEnteredFormat",
+        },
+      },
+      {
         updateDimensionProperties: {
           range: {
             sheetId: kitchenSheetId,
             dimension: "COLUMNS",
-            startIndex: 7,
-            endIndex: 9,
+            startIndex: 0,
+            endIndex: 16,
           },
-          properties: { hiddenByUser: true },
+          properties: { hiddenByUser: false },
           fields: "hiddenByUser",
         },
       },
     ];
 
-    [150, 150, 125, 220, 85, 180, 300].forEach(
+    [190, 150, 150, 125, 180, 300].forEach(
       (pixelSize, columnIndex) => {
         requests.push({
           updateDimensionProperties: {
@@ -309,6 +373,18 @@ class GoogleSheetsOrderStore {
         });
       },
     );
+    requests.push({
+      updateDimensionProperties: {
+        range: {
+          sheetId: kitchenSheetId,
+          dimension: "COLUMNS",
+          startIndex: KITCHEN_HEADERS.length,
+          endIndex: 16,
+        },
+        properties: { pixelSize: 150 },
+        fields: "pixelSize",
+      },
+    });
 
     for (const title of [
       this.config.ordersSheet,
@@ -475,30 +551,27 @@ class GoogleSheetsOrderStore {
 
   async refreshKitchenViewUnlocked() {
     const orders = await this.listOrders();
-    const rows = [];
+    const itemsByOrder = new Map();
 
     for (const order of orders) {
       const items = await this.getOrderItems(order.orderId);
-      for (const item of items) {
-        if (item.isLogistics === "SI") continue;
-        rows.push(kitchenRow(order, item));
-      }
+      itemsByOrder.set(String(order.orderId), items);
     }
+    const table = buildKitchenTable(orders, itemsByOrder);
 
     const title = quoteSheetTitle(this.config.kitchenSheet);
     await this.sheets.spreadsheets.values.clear({
       spreadsheetId: this.config.spreadsheetId,
-      range: `${title}!A2:I`,
+      range: `${title}!A:Z`,
     });
-    if (rows.length) {
-      await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.config.spreadsheetId,
-        range: `${title}!A2:I${rows.length + 1}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: rows },
-      });
-    }
-    return rows;
+    const endColumn = columnName(table.headers.length);
+    await this.sheets.spreadsheets.values.update({
+      spreadsheetId: this.config.spreadsheetId,
+      range: `${title}!A1:${endColumn}${table.values.length}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: table.values },
+    });
+    return table;
   }
 
   async refreshProductionSummary() {
@@ -560,6 +633,7 @@ class GoogleSheetsOrderStore {
 }
 
 module.exports = {
+  buildKitchenTable,
   GoogleSheetsOrderStore,
   ITEM_HEADERS,
   KITCHEN_HEADERS,
@@ -567,6 +641,5 @@ module.exports = {
   PRODUCTION_HEADERS,
   columnName,
   fulfillmentLabel,
-  kitchenRow,
   quoteSheetTitle,
 };
