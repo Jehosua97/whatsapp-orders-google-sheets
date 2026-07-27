@@ -3,7 +3,15 @@
 const path = require("node:path");
 const QRCode = require("qrcode");
 const { Client, LocalAuth } = require("whatsapp-web.js");
-const { AutoReplyState, isAllowedChat } = require("./auto-reply-state");
+const { isAllowedChat } = require("./auto-reply-state");
+const {
+  advanceConversation,
+  buildTextOrder,
+  confirmedMessage,
+  ConversationStateStore,
+  menuMessage,
+  newSession,
+} = require("./conversation-flow");
 const {
   deliveryFeeFor,
   detectCity,
@@ -193,11 +201,59 @@ async function handleFulfillmentText({ message, store, config }) {
   return true;
 }
 
+async function handleConversationMessage({
+  message,
+  client,
+  store,
+  config,
+  conversationState,
+  logger = console,
+}) {
+  let session = conversationState.get(message.from);
+  if (!session) {
+    const customer = await customerIdentity(message, client);
+    session = newSession({
+      chatId: message.from,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+    });
+    conversationState.set(message.from, session);
+    await message.reply(menuMessage(session.customerName, config));
+    return true;
+  }
+
+  const result = advanceConversation(
+    session,
+    message.body,
+    config,
+    new Date(),
+  );
+
+  if (result.completed) {
+    const normalized = buildTextOrder(session, message, config);
+    const saved = await store.saveOrder(normalized);
+    if (saved.inserted) {
+      logger.log(`Pedido conversacional guardado: ${session.orderId}`);
+    } else {
+      logger.log(`Pedido conversacional duplicado omitido: ${session.orderId}`);
+    }
+    conversationState.set(message.from, result.session);
+    await message.reply(confirmedMessage(session));
+    return true;
+  }
+
+  conversationState.set(message.from, result.session);
+  for (const reply of result.messages) {
+    await message.reply(reply);
+  }
+  return true;
+}
+
 function createWhatsAppClient({ config, store, logger = console }) {
   const qrFile = path.resolve("whatsapp-qr.png");
-  const autoReplyState = new AutoReplyState(
-    config.autoReplyStateFile,
-    config.autoReplyCooldownHours,
+  const messageQueues = new Map();
+  const conversationState = new ConversationStateStore(
+    config.conversationStateFile,
   );
   const client = new Client({
     authStrategy: new LocalAuth({
@@ -258,7 +314,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
     logger.error("WhatsApp se desconecto:", reason),
   );
 
-  client.on("message", async (message) => {
+  const processMessage = async (message) => {
     try {
       if (!isAllowedChat(message.from, config.automationAllowedChatIds)) {
         logger.log(`Mensaje ignorado por lista permitida: ${message.from}`);
@@ -322,7 +378,6 @@ function createWhatsAppClient({ config, store, logger = console }) {
             );
           }
           await message.reply(lines.join("\n"));
-          autoReplyState.markSent(message.from);
         }
         return;
       }
@@ -333,25 +388,16 @@ function createWhatsAppClient({ config, store, logger = console }) {
       }
 
       if (message.type === "chat") {
-        const handled = await handleFulfillmentText({
+        await handleConversationMessage({
           message,
+          client,
           store,
           config,
+          conversationState,
+          logger,
         });
-        if (handled) return;
+        return;
       }
-
-      const pending = await store.getPendingOrderByChat(message.from);
-      if (pending || !autoReplyState.shouldSend(message.from)) return;
-
-      await message.reply(
-        [
-          "Nos estamos actualizando para atenderte mejor.",
-          "Puedes intentar hacer tu pedido desde el catalogo que aparece en la esquina superior derecha del chat.",
-          "Si necesitas ayuda, con gusto tomaremos tu pedido por mensaje aqui mismo.",
-        ].join("\n"),
-      );
-      autoReplyState.markSent(message.from);
     } catch (error) {
       logger.error("No se pudo procesar el mensaje de WhatsApp:", error);
       if (message.type === "order") {
@@ -362,6 +408,17 @@ function createWhatsAppClient({ config, store, logger = console }) {
           .catch(() => {});
       }
     }
+  };
+
+  client.on("message", (message) => {
+    const previous = messageQueues.get(message.from) || Promise.resolve();
+    const current = previous.then(() => processMessage(message));
+    messageQueues.set(message.from, current);
+    current.finally(() => {
+      if (messageQueues.get(message.from) === current) {
+        messageQueues.delete(message.from);
+      }
+    });
   });
 
   return client;
@@ -371,6 +428,7 @@ module.exports = {
   addGrandTotal,
   createWhatsAppClient,
   customerIdentity,
+  handleConversationMessage,
   handleFulfillmentText,
   handleLocation,
   loadOrderWithRetry,

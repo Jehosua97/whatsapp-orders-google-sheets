@@ -27,10 +27,15 @@ flowchart LR
     Dedup --> Reply[Customer confirmation]
 ```
 
-The service listens only for WhatsApp messages of type `order`. Each accepted
-cart is transformed into a summary record and one record per product. Google
-Sheets writes are serialized to prevent concurrent orders from selecting the
-same rows.
+The service accepts WhatsApp catalog carts and, on the conversational branch,
+text-based orders. Each accepted order is transformed into a summary record
+and one record per product. Google Sheets writes are serialized to prevent
+concurrent orders from selecting the same rows.
+
+The `feature/conversational-order-flow` branch also accepts text orders through
+a persistent WhatsApp conversation. It collects quantities, validates the
+minimum order, asks for the delivery day and fulfillment method, shows the
+final total, and writes to Sheets only after the customer replies `SI`.
 
 ## Engineering Highlights
 
@@ -136,6 +141,13 @@ PICKUP_TIME_WINDOW=5:00 p.m. a 6:00 p.m.
 WHATSAPP_AUTOMATION_ALLOWLIST=
 AUTO_REPLY_COOLDOWN_HOURS=24
 AUTO_REPLY_STATE_FILE=.data/auto-reply-state.json
+CONVERSATION_STATE_FILE=.data/conversation-state.json
+MINIMUM_ORDER_PIECES=5
+CHOCOLATE_CONCHA_PRICE=3.50
+VANILLA_CONCHA_PRICE=3.50
+BOLILLO_PRICE=2.50
+WEDNESDAY_DELIVERY_WINDOW=después de las 3:00 PM
+SATURDAY_DELIVERY_WINDOW=después de las 10:00 AM
 ```
 
 Start the service:
@@ -158,6 +170,24 @@ WHATSAPP_AUTOMATION_ALLOWLIST=123456789@lid
 
 Messages and carts from every other chat are ignored. Multiple test IDs can be
 separated by commas.
+
+### Conversational order flow
+
+Any text from an allowed test chat starts the menu. The conversation proceeds
+through:
+
+1. Product preference.
+2. Chocolate, vanilla, and bolillo quantities.
+3. Minimum-piece validation.
+4. Wednesday or Saturday.
+5. Pickup or delivery.
+6. Brampton or Mississauga when delivery is selected.
+7. Final `SI` or `NO` confirmation.
+
+Incomplete and canceled conversations are not written to Google Sheets. A
+confirmed delivery remains available for the customer to share their WhatsApp
+location. Conversation progress is stored in `.data/conversation-state.json`,
+which is excluded from Git.
 
 ### Catalog fulfillment items
 

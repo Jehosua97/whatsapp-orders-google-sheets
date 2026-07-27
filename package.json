@@ -2,7 +2,7 @@
   "name": "lacenaduria-whatsapp-orders",
   "version": "1.0.0",
   "private": true,
-  "description": "Captura carritos de WhatsApp Business y los registra en Google Sheets.",
+  "description": "Captura pedidos de WhatsApp Business y los registra en Google Sheets.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

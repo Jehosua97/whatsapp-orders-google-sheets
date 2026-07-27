@@ -60,6 +60,24 @@ function readConfig() {
     autoReplyStateFile: path.resolve(
       process.env.AUTO_REPLY_STATE_FILE || ".data/auto-reply-state.json",
     ),
+    conversationStateFile: path.resolve(
+      process.env.CONVERSATION_STATE_FILE ||
+        ".data/conversation-state.json",
+    ),
+    minimumOrderPieces: number("MINIMUM_ORDER_PIECES", 5),
+    menuPrices: {
+      chocolate: number("CHOCOLATE_CONCHA_PRICE", 3.5),
+      vanilla: number("VANILLA_CONCHA_PRICE", 3.5),
+      bolillo: number("BOLILLO_PRICE", 2.5),
+    },
+    deliveryWindows: {
+      wednesday:
+        process.env.WEDNESDAY_DELIVERY_WINDOW?.trim() ||
+        "después de las 3:00 PM",
+      saturday:
+        process.env.SATURDAY_DELIVERY_WINDOW?.trim() ||
+        "después de las 10:00 AM",
+    },
   };
 }
 
