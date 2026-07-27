@@ -25,6 +25,10 @@ flowchart LR
     Sheets --> Kitchen[(Kitchen orders view)]
     Sheets --> Internal[(Hidden system worksheets)]
     Dedup --> Reply[Customer confirmation]
+    Admin[Operations panel] --> Config[(Runtime configuration)]
+    Config --> Client
+    Admin --> Sheets
+    Admin --> Client
 ```
 
 The service accepts WhatsApp catalog carts and, on the conversational branch,
@@ -55,6 +59,8 @@ final total, and writes to Sheets only after the customer replies `SI`.
 - Technical worksheets hidden automatically without deleting source data.
 - Safe LID-to-phone resolution for current WhatsApp contact identifiers.
 - Customer confirmation only after a successful Sheets write.
+- Local operations panel for catalog, schedules, closures, and rescheduling.
+- Runtime configuration shared by the web panel and WhatsApp messages.
 - Node.js native test suite and GitHub Actions CI.
 - Secrets, authentication state, QR images, and runtime logs excluded from Git.
 
@@ -65,6 +71,8 @@ final total, and writes to Sheets only after the customer replies `SI`.
 | Runtime | Node.js 18+ |
 | Messaging | `whatsapp-web.js` |
 | Cloud API | Google Sheets API |
+| Admin API | Express |
+| Admin UI | HTML, CSS, JavaScript, Lucide |
 | Identity | Google Cloud service account |
 | Browser automation | Puppeteer / Chromium |
 | Testing | Node.js test runner |
@@ -75,8 +83,8 @@ final total, and writes to Sheets only after the customer replies `SI`.
 The only visible worksheet is `Pedidos para cocina`. It uses one row per order
 and creates one quantity column per catalog product:
 
-| Order ID | Date and time | Customer | Phone | Delivery or pickup | Notes | Chocolate concha | Vanilla concha | Bolillo |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Order ID | Status | Date and time | Customer | Phone | Delivery or pickup | Address | Notes | Chocolate concha | Vanilla concha | Bolillo |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 The second row shows the total quantity to prepare for each product. New
 products automatically become new columns. Delivery catalog items are used to
@@ -84,11 +92,12 @@ fill the delivery-or-pickup column and are not counted as food. Technical order
 and item records remain in hidden worksheets for deduplication and future
 automation.
 
-The `Status` column has two options:
+The `Status` column has three options:
 
 - `Confirmado`: its product quantities are included in `TOTAL A PREPARAR`.
 - `Entregado`: it is excluded from totals, displayed in gray, and moved below
   active orders by the background synchronization process.
+- `Cancelado`: it remains as inactive history and is excluded from totals.
 
 ## Local Setup
 
@@ -184,10 +193,10 @@ WHATSAPP_AUTOMATION_ALLOWED_PHONES=14165550123,16475550123
 Any text from an allowed test chat starts the menu. The conversation proceeds
 through:
 
-1. Product preference.
-2. Chocolate, vanilla, and bolillo quantities.
+1. Product preference using the active web-panel catalog.
+2. Quantity for every available product.
 3. Minimum-piece validation.
-4. Wednesday or Saturday.
+4. One of the currently available service dates.
 5. Free pickup or paid delivery.
 6. Brampton or Mississauga when delivery is selected.
 7. A written delivery address, Google Maps link, or WhatsApp location.
@@ -215,6 +224,29 @@ them of the current order and offers these actions:
 Changes replace the existing order under the same ID only after `SI`.
 Canceled orders remain in the worksheet for history, are excluded from
 production totals, and appear as inactive rows.
+
+### Operations panel
+
+The bot serves a local operations interface with the same process:
+
+```text
+http://127.0.0.1:3090
+```
+
+The panel supports:
+
+- Up to ten catalog products with editable names, kitchen labels, prices,
+  icons, and availability.
+- Weekly pickup and delivery availability with independent time windows.
+- Date-specific service closures.
+- Affected-order review with the next immediate available date.
+- A test-allowlist-protected `Notify and reschedule` action that sends the
+  WhatsApp notice and updates Google Sheets and conversation state.
+
+Runtime changes are stored in `.data/admin-config.json`, which is excluded
+from Git. New WhatsApp messages read this configuration immediately. The
+default host is loopback-only; set `ADMIN_PASSWORD` before changing
+`ADMIN_HOST` to expose the panel on another interface.
 
 ### Catalog fulfillment items
 
@@ -251,6 +283,8 @@ city fees.
   when deployed to a cloud environment.
 - Customer phone numbers and order details are operational data and require
   appropriate retention and access controls.
+- The operations panel binds to `127.0.0.1` by default. Remote exposure
+  requires authentication, TLS, and network access controls.
 - The service never trusts a client-provided calculated total as a payment
   authorization.
 

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>La Cenaduría | Operaciones</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-mark">LC</div>
+        <div>
+          <strong>La Cenaduría</strong>
+          <span>Operaciones</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="connection-status" id="connectionStatus">
+          <span class="status-dot" id="connectionDot"></span>
+          <span id="connectionLabel">WhatsApp conectando</span>
+        </span>
+        <button class="icon-button" id="refreshButton" title="Actualizar datos">
+          <i data-lucide="refresh-cw"></i>
+        </button>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <nav class="side-nav" aria-label="Secciones">
+        <button class="nav-item active" data-view="catalog">
+          <i data-lucide="notebook-tabs"></i>
+          <span>Catálogo</span>
+        </button>
+        <button class="nav-item" data-view="schedules">
+          <i data-lucide="calendar-clock"></i>
+          <span>Horarios</span>
+        </button>
+        <button class="nav-item" data-view="rescheduling">
+          <i data-lucide="calendar-sync"></i>
+          <span>Reprogramaciones</span>
+          <span class="nav-count" id="closureNavCount">0</span>
+        </button>
+      </nav>
+
+      <main>
+        <div class="test-banner" id="testBanner" hidden>
+          <i data-lucide="shield-check"></i>
+          <span>Modo de pruebas: los mensajes solo se envían a clientes autorizados.</span>
+        </div>
+
+        <section class="view active" id="catalogView">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Oferta vigente</p>
+              <h1>Catálogo</h1>
+            </div>
+            <div class="view-actions">
+              <button class="button secondary" id="addProductButton">
+                <i data-lucide="plus"></i>
+                Agregar producto
+              </button>
+              <button class="button primary" id="saveCatalogButton">
+                <i data-lucide="save"></i>
+                Guardar catálogo
+              </button>
+            </div>
+          </div>
+          <div class="summary-strip" id="catalogSummary"></div>
+          <div class="data-table catalog-table">
+            <div class="table-head">
+              <span>Producto</span>
+              <span>Nombre en cocina</span>
+              <span>Precio</span>
+              <span>Disponible</span>
+              <span></span>
+            </div>
+            <div id="catalogRows"></div>
+          </div>
+        </section>
+
+        <section class="view" id="schedulesView">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Disponibilidad semanal</p>
+              <h1>Horarios</h1>
+            </div>
+            <div class="view-actions">
+              <button class="button secondary" id="addScheduleButton">
+                <i data-lucide="calendar-plus"></i>
+                Agregar día
+              </button>
+              <button class="button primary" id="saveSchedulesButton">
+                <i data-lucide="save"></i>
+                Guardar horarios
+              </button>
+            </div>
+          </div>
+          <div id="scheduleRows" class="schedule-list"></div>
+        </section>
+
+        <section class="view" id="reschedulingView">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Próximas fechas</p>
+              <h1>Reprogramaciones</h1>
+            </div>
+            <button class="button danger-outline" id="newClosureButton">
+              <i data-lucide="calendar-x"></i>
+              Cerrar una fecha
+            </button>
+          </div>
+
+          <div class="metrics" id="rescheduleMetrics"></div>
+
+          <div class="section-heading">
+            <h2>Calendario operativo</h2>
+          </div>
+          <div class="date-grid" id="upcomingDates"></div>
+
+          <div class="section-heading with-action">
+            <h2>Cierres activos</h2>
+            <span id="closureCountLabel"></span>
+          </div>
+          <div class="closure-list" id="closureRows"></div>
+
+          <section class="affected-section" id="affectedSection" hidden>
+            <div class="section-heading with-action">
+              <div>
+                <p class="eyebrow">Pedidos confirmados</p>
+                <h2 id="affectedTitle">Pedidos afectados</h2>
+              </div>
+              <button class="icon-button" id="closeAffectedButton" title="Cerrar">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+            <div id="affectedRows" class="affected-list"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="closureDialog">
+      <form method="dialog" id="closureForm">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Excepción de servicio</p>
+            <h2>Cerrar fecha</h2>
+          </div>
+          <button class="icon-button" value="cancel" title="Cerrar">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <label class="field">
+          <span>Fecha</span>
+          <input type="date" id="closureDate" required />
+        </label>
+        <fieldset>
+          <legend>Servicios no disponibles</legend>
+          <label class="check-line">
+            <input type="checkbox" id="closePickup" checked />
+            <span>Pickup</span>
+          </label>
+          <label class="check-line">
+            <input type="checkbox" id="closeDelivery" checked />
+            <span>Delivery</span>
+          </label>
+        </fieldset>
+        <label class="field">
+          <span>Motivo interno</span>
+          <input
+            type="text"
+            id="closureReason"
+            maxlength="120"
+            placeholder="Ej. Producción no disponible"
+          />
+        </label>
+        <div class="dialog-actions">
+          <button class="button secondary" value="cancel">Cancelar</button>
+          <button class="button danger" id="confirmClosureButton" value="default">
+            <i data-lucide="calendar-x"></i>
+            Cerrar fecha
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script src="/vendor/lucide.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -70,6 +70,12 @@ function readConfig() {
       process.env.CONVERSATION_STATE_FILE ||
         ".data/conversation-state.json",
     ),
+    adminConfigFile: path.resolve(
+      process.env.ADMIN_CONFIG_FILE || ".data/admin-config.json",
+    ),
+    adminHost: process.env.ADMIN_HOST?.trim() || "127.0.0.1",
+    adminPort: number("ADMIN_PORT", 3090),
+    adminPassword: process.env.ADMIN_PASSWORD || "",
     minimumOrderPieces: number("MINIMUM_ORDER_PIECES", 5),
     menuPrices: {
       chocolate: number("CHOCOLATE_CONCHA_PRICE", 3.5),

@@ -125,6 +125,70 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   assert.match(confirmedMessage(session), /Pedido confirmado, Lic\. Gonzalez/);
 });
 
+test("usa el catalogo y los horarios configurados desde el panel", () => {
+  const dynamicConfig = {
+    ...config,
+    catalog: [
+      {
+        id: "taco-pastor",
+        name: "Tacos al pastor",
+        promptName: "Tacos al pastor",
+        sheetName: "Taco al pastor",
+        emoji: "🌮",
+        price: 4,
+        active: true,
+      },
+      {
+        id: "oculto",
+        name: "Producto oculto",
+        sheetName: "Producto oculto",
+        emoji: "X",
+        price: 1,
+        active: false,
+      },
+    ],
+    menuPrices: { "taco-pastor": 4, oculto: 1 },
+    schedules: [
+      {
+        id: "friday",
+        name: "Viernes",
+        weekday: 5,
+        active: true,
+        pickupEnabled: true,
+        pickupWindow: "6:00 p.m. a 7:00 p.m.",
+        deliveryEnabled: false,
+        deliveryWindow: "",
+      },
+    ],
+    closures: [],
+  };
+  let session = newSession({
+    chatId: "test@lid",
+    customerName: "Ana",
+    customerPhone: "14370000000",
+    config: dynamicConfig,
+    now: monday,
+  });
+
+  assert.match(menuMessage("Ana", dynamicConfig), /Tacos al pastor/);
+  assert.doesNotMatch(menuMessage("Ana", dynamicConfig), /Producto oculto/);
+  for (const input of ["1", "5", "1", "1"]) {
+    session = advanceConversation(
+      session,
+      input,
+      dynamicConfig,
+      monday,
+    ).session;
+  }
+
+  assert.equal(session.step, "CONFIRMATION");
+  assert.equal(session.schedule.name, "Viernes");
+  assert.equal(session.schedule.timeWindow, "6:00 p.m. a 7:00 p.m.");
+  const order = buildTextOrder(session, {}, dynamicConfig);
+  assert.equal(order.items[0].productName, "Taco al pastor");
+  assert.equal(order.items[0].quantity, 5);
+});
+
 test("no permite continuar con menos de cinco piezas", () => {
   let session = newSession({
     chatId: "test@lid",
@@ -329,6 +393,17 @@ test("el estado conversacional persiste en disco", () => {
 
   const reloaded = new ConversationStateStore(file);
   assert.equal(reloaded.get("test@lid").orderId, session.orderId);
+  assert.equal(
+    reloaded.updateByOrderId(session.orderId, (current) => ({
+      ...current,
+      schedule: { date: "2026-08-01" },
+    })),
+    true,
+  );
+  assert.equal(
+    new ConversationStateStore(file).get("test@lid").schedule.date,
+    "2026-08-01",
+  );
   reloaded.set("test@lid", null);
   assert.equal(reloaded.get("test@lid"), null);
 });

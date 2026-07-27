@@ -235,6 +235,7 @@ async function handleConversationMessage({
       chatId: message.from,
       customerName: customer.name,
       customerPhone: customer.phone,
+      config,
     });
     conversationState.set(message.from, session);
     await message.reply(menuMessage(session.customerName, config));
@@ -296,13 +297,19 @@ async function handleConversationMessage({
   return true;
 }
 
-function createWhatsAppClient({ config, store, logger = console }) {
+function createWhatsAppClient({
+  config,
+  configProvider = () => config,
+  conversationState: suppliedConversationState,
+  store,
+  logger = console,
+}) {
   const qrFile = path.resolve("whatsapp-qr.png");
   const messageQueues = new Map();
   const authorizedChatIds = new Set(config.automationAllowedChatIds);
-  const conversationState = new ConversationStateStore(
-    config.conversationStateFile,
-  );
+  const conversationState =
+    suppliedConversationState ||
+    new ConversationStateStore(config.conversationStateFile);
   const client = new Client({
     authStrategy: new LocalAuth({
       clientId: "lacenaduria",
@@ -321,6 +328,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     },
   });
+  client.lacenaduriaStatus = "CONNECTING";
 
   client.on("code", (code) => {
     const formatted = String(code).match(/.{1,4}/g)?.join("-") || code;
@@ -343,8 +351,12 @@ function createWhatsAppClient({ config, store, logger = console }) {
     }
   });
 
-  client.on("authenticated", () => logger.log("WhatsApp autenticado."));
+  client.on("authenticated", () => {
+    client.lacenaduriaStatus = "AUTHENTICATED";
+    logger.log("WhatsApp autenticado.");
+  });
   client.on("ready", async () => {
+    client.lacenaduriaStatus = "READY";
     logger.log("WhatsApp listo para recibir pedidos.");
     try {
       await reconcileCustomerPhones({ client, store, logger });
@@ -355,15 +367,18 @@ function createWhatsAppClient({ config, store, logger = console }) {
       );
     }
   });
-  client.on("auth_failure", (error) =>
-    logger.error("Fallo la autenticacion de WhatsApp:", error),
-  );
-  client.on("disconnected", (reason) =>
-    logger.error("WhatsApp se desconecto:", reason),
-  );
+  client.on("auth_failure", (error) => {
+    client.lacenaduriaStatus = "AUTH_FAILURE";
+    logger.error("Fallo la autenticacion de WhatsApp:", error);
+  });
+  client.on("disconnected", (reason) => {
+    client.lacenaduriaStatus = "DISCONNECTED";
+    logger.error("WhatsApp se desconecto:", reason);
+  });
 
   const processMessage = async (message) => {
     try {
+      const runtimeConfig = configProvider();
       const allowed = await isAllowedMessage({
         client,
         chatId: message.from,
@@ -385,9 +400,9 @@ function createWhatsAppClient({ config, store, logger = console }) {
           order,
           customerName: customer.name,
           customerPhone: customer.phone,
-          priceDivisor: config.whatsappPriceDivisor,
-          deliveryFees: config.deliveryFees,
-          pickupTimeWindow: config.pickupTimeWindow,
+          priceDivisor: runtimeConfig.whatsappPriceDivisor,
+          deliveryFees: runtimeConfig.deliveryFees,
+          pickupTimeWindow: runtimeConfig.pickupTimeWindow,
         });
         const result = await store.saveOrder(normalized);
 
@@ -399,7 +414,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
         logger.log(
           `Pedido guardado en Google Sheets: ${normalized.summary.orderId}`,
         );
-        if (config.sendCustomerConfirmation) {
+        if (runtimeConfig.sendCustomerConfirmation) {
           const productLines = normalized.items
             .filter((item) => !item.isLogistics)
             .map((item) => `- ${item.quantity} x ${item.productName}`);
@@ -417,7 +432,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
               "Vemos mas de una opcion de entrega o recogida. Dinos cual deseas conservar y te ayudaremos a corregirla.",
             );
           } else if (normalized.summary.fulfillmentType === "PICKUP") {
-            lines.push(pickupReply(config.pickupTimeWindow));
+            lines.push(pickupReply(runtimeConfig.pickupTimeWindow));
           } else if (normalized.summary.fulfillmentType === "DELIVERY") {
             const city =
               normalized.summary.city === "BRAMPTON"
@@ -459,14 +474,18 @@ function createWhatsAppClient({ config, store, logger = console }) {
             message,
             client,
             store,
-            config,
+            config: runtimeConfig,
             conversationState,
             input: locationInput,
             logger,
           });
           return;
         }
-        await handleLocation({ message, store, config });
+        await handleLocation({
+          message,
+          store,
+          config: runtimeConfig,
+        });
         return;
       }
 
@@ -475,7 +494,7 @@ function createWhatsAppClient({ config, store, logger = console }) {
           message,
           client,
           store,
-          config,
+          config: runtimeConfig,
           conversationState,
           logger,
         });

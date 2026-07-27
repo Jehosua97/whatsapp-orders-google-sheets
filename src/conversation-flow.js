@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { normalizeOrder } = require("./order");
+const { isServiceClosed } = require("./admin-config");
 
 const PRODUCTS = {
   chocolate: {
@@ -28,12 +29,177 @@ const PRODUCTS = {
   },
 };
 
-const PRODUCT_ORDERS = {
-  "1": ["chocolate", "vanilla", "bolillo"],
-  "2": ["vanilla", "chocolate", "bolillo"],
-  "3": ["bolillo", "chocolate", "vanilla"],
-  "4": ["chocolate", "vanilla", "bolillo"],
-};
+function catalogProducts(config) {
+  if (Array.isArray(config.catalog) && config.catalog.length) {
+    return config.catalog.map((product) => ({
+      ...product,
+      displayName: product.name,
+      promptName: product.promptName || product.name,
+      sheetName: product.sheetName || product.name,
+      productId: product.id,
+    }));
+  }
+  return Object.entries(PRODUCTS).map(([id, product]) => ({
+    id,
+    ...product,
+    name: product.displayName,
+    price: Number(config.menuPrices[id] || 0),
+    active: true,
+  }));
+}
+
+function productDefinition(productKey, config) {
+  return (
+    catalogProducts(config).find((product) => product.id === productKey) ||
+    PRODUCTS[productKey] || {
+      id: productKey,
+      productId: productKey,
+      emoji: "🥖",
+      displayName: productKey,
+      promptName: productKey,
+      sheetName: productKey,
+    }
+  );
+}
+
+function activeProducts(config) {
+  return catalogProducts(config).filter((product) => product.active !== false);
+}
+
+function menuProductKeys(config) {
+  return activeProducts(config).map((product) => product.id);
+}
+
+function productOrderFromAnswer(answer, productKeys) {
+  const index = Number(answer) - 1;
+  if (index === productKeys.length && productKeys.length > 1) {
+    return [...productKeys];
+  }
+  if (index < 0 || index >= productKeys.length) return null;
+  const selected = productKeys[index];
+  return [selected, ...productKeys.filter((key) => key !== selected)];
+}
+
+function configuredSchedules(config) {
+  if (Array.isArray(config.schedules) && config.schedules.length) {
+    return config.schedules;
+  }
+  return [
+    {
+      id: "wednesday",
+      name: "Miércoles",
+      weekday: 3,
+      active: true,
+      pickupEnabled: true,
+      pickupWindow: config.pickupTimeWindow,
+      deliveryEnabled: true,
+      deliveryWindow: config.deliveryWindows.wednesday,
+    },
+    {
+      id: "saturday",
+      name: "Sábado",
+      weekday: 6,
+      active: true,
+      pickupEnabled: true,
+      pickupWindow: config.pickupTimeWindow,
+      deliveryEnabled: true,
+      deliveryWindow: config.deliveryWindows.saturday,
+    },
+  ];
+}
+
+function scheduleOptions(config, now, serviceType = "") {
+  return configuredSchedules(config)
+    .filter((schedule) => schedule.active !== false)
+    .map((schedule) => {
+      const date = nextWeekdayDate(now, schedule.weekday);
+      const pickupAvailable =
+        schedule.pickupEnabled !== false &&
+        !isServiceClosed(
+          { closures: config.closures || [] },
+          date,
+          "PICKUP",
+        );
+      const deliveryAvailable =
+        schedule.deliveryEnabled !== false &&
+        !isServiceClosed(
+          { closures: config.closures || [] },
+          date,
+          "DELIVERY",
+        );
+      return {
+        ...schedule,
+        date,
+        pickupAvailable,
+        deliveryAvailable,
+      };
+    })
+    .filter((schedule) => {
+      if (serviceType === "PICKUP") return schedule.pickupAvailable;
+      if (serviceType === "DELIVERY") return schedule.deliveryAvailable;
+      return schedule.pickupAvailable || schedule.deliveryAvailable;
+    })
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function scheduleMenu(options, title = "📅 ¿Para qué día quieres tu entrega?") {
+  if (!options.length) {
+    return [
+      title,
+      "Por el momento no tenemos fechas disponibles. Te contactaremos para ayudarte.",
+    ].join("\n");
+  }
+  return [
+    title,
+    ...options.map(
+      (schedule, index) =>
+        `${index + 1} - ${schedule.name} (${schedule.pickupAvailable && schedule.deliveryAvailable
+          ? schedule.deliveryWindow || schedule.pickupWindow
+          : schedule.pickupAvailable
+            ? `Pickup: ${schedule.pickupWindow}`
+            : `Delivery: ${schedule.deliveryWindow}`})`,
+    ),
+  ].join("\n");
+}
+
+function fulfillmentMenu(schedule) {
+  const lines = ["🚗 ¿Cómo prefieres recibir tu pedido?"];
+  if (schedule.pickupAvailable) {
+    lines.push(`1 - Pickup GRATIS (${schedule.pickupWindow})`);
+  }
+  if (schedule.deliveryAvailable) {
+    lines.push(`2 - Delivery a domicilio (${schedule.deliveryWindow})`);
+  }
+  return lines.join("\n");
+}
+
+function scheduleAvailability(schedule, config) {
+  if (!schedule) return schedule;
+  const weekday = new Date(`${schedule.date}T12:00:00.000Z`).getUTCDay();
+  const current =
+    configuredSchedules(config).find((item) => item.id === schedule.id) ||
+    configuredSchedules(config).find((item) => item.weekday === weekday) ||
+    schedule;
+  return {
+    ...schedule,
+    ...current,
+    date: schedule.date,
+    pickupAvailable:
+      current.pickupEnabled !== false &&
+      !isServiceClosed(
+        { closures: config.closures || [] },
+        schedule.date,
+        "PICKUP",
+      ),
+    deliveryAvailable:
+      current.deliveryEnabled !== false &&
+      !isServiceClosed(
+        { closures: config.closures || [] },
+        schedule.date,
+        "DELIVERY",
+      ),
+  };
+}
 
 function normalizeAnswer(value) {
   return String(value || "")
@@ -91,29 +257,33 @@ function customerLabel(name) {
 }
 
 function menuMessage(name, config) {
+  const products = activeProducts(config);
   return [
     `Mucho gusto, ${customerLabel(name)} 😊`,
     "",
     "📋 NUESTRO MENU:",
     "",
-    `🍫 Conchita Chocolate - ${money(config.menuPrices.chocolate)} c/u`,
-    `🍦 Conchita Vainilla - ${money(config.menuPrices.vanilla)} c/u`,
-    `🍞 Bolillo - ${money(config.menuPrices.bolillo)} c/u`,
+    ...products.map(
+      (product) =>
+        `${product.emoji} ${product.name} - ${money(product.price)} c/u`,
+    ),
     "",
     `⚠️ Pedido mínimo: ${config.minimumOrderPieces} piezas`,
     "",
     "¿Qué deseas ordenar? Escribe:",
-    "1️⃣ - Conchitas Chocolate",
-    "2️⃣ - Conchitas Vainilla",
-    "3️⃣ - Bolillos",
-    "4️⃣ - Combinación (de todo)",
+    ...products.map(
+      (product, index) => `${index + 1} - ${product.name}`,
+    ),
+    ...(products.length > 1
+      ? [`${products.length + 1} - Combinación (de todo)`]
+      : []),
     "",
     "Responde con el número de tu elección:",
   ].join("\n");
 }
 
-function quantityPrompt(productKey, first, minimumPieces) {
-  const product = PRODUCTS[productKey];
+function quantityPrompt(productKey, first, minimumPieces, config) {
+  const product = productDefinition(productKey, config);
   if (first) {
     return [
       `${product.emoji} ${product.promptName}`,
@@ -129,8 +299,8 @@ function quantityPrompt(productKey, first, minimumPieces) {
   ].join("\n");
 }
 
-function quantityAcknowledgement(productKey, quantity) {
-  const product = PRODUCTS[productKey];
+function quantityAcknowledgement(productKey, quantity, config) {
+  const product = productDefinition(productKey, config);
   return `✅ ${quantity} ${product.promptName} anotadas!`;
 }
 
@@ -149,9 +319,13 @@ function subtotal(quantities, prices) {
   );
 }
 
-function productLines(quantities, prices, includePrices) {
-  return ["chocolate", "vanilla", "bolillo"].map((productKey) => {
-    const product = PRODUCTS[productKey];
+function productLines(quantities, prices, includePrices, config) {
+  const configuredKeys = catalogProducts(config).map((product) => product.id);
+  const keys = [
+    ...new Set([...configuredKeys, ...Object.keys(quantities || {})]),
+  ];
+  return keys.map((productKey) => {
+    const product = productDefinition(productKey, config);
     const quantity = Number(quantities?.[productKey] || 0);
     const price = includePrices
       ? ` x ${money(prices[productKey])}`
@@ -165,14 +339,12 @@ function orderSummary(session, config) {
   const orderSubtotal = subtotal(session.quantities, config.menuPrices);
   return [
     "✅ Resumen de tu pedido:",
-    ...productLines(session.quantities, config.menuPrices, true),
+    ...productLines(session.quantities, config.menuPrices, true, config),
     "━━━━━━━━━━━━━━━━━━",
     `📦 Total piezas: ${pieces}`,
     `💵 Subtotal: ${money(orderSubtotal)}`,
     "",
-    "📅 ¿Para qué día quieres tu entrega?",
-    `1️⃣ - Miércoles (${config.deliveryWindows.wednesday})`,
-    `2️⃣ - Sábado (${config.deliveryWindows.saturday})`,
+    scheduleMenu(session.scheduleOptions || []),
   ].join("\n");
 }
 
@@ -192,22 +364,11 @@ function nextWeekdayDate(now, targetWeekday) {
   return date.toISOString().slice(0, 10);
 }
 
-function scheduleFromAnswer(answer, config, now) {
-  if (answer === "1") {
-    return {
-      name: "Miércoles",
-      date: nextWeekdayDate(now, 3),
-      timeWindow: config.deliveryWindows.wednesday,
-    };
-  }
-  if (answer === "2") {
-    return {
-      name: "Sábado",
-      date: nextWeekdayDate(now, 6),
-      timeWindow: config.deliveryWindows.saturday,
-    };
-  }
-  return null;
+function scheduleFromAnswer(answer, config, now, options) {
+  const choices = options || scheduleOptions(config, now);
+  const index = Number(answer) - 1;
+  const selected = choices[index];
+  return selected ? { ...selected } : null;
 }
 
 function finalSummary(session, config) {
@@ -225,7 +386,7 @@ function finalSummary(session, config) {
   return [
     "📋 RESUMEN FINAL DE TU PEDIDO:",
     "━━━━━━━━━━━━━━━━━━",
-    ...productLines(session.quantities, config.menuPrices, false),
+    ...productLines(session.quantities, config.menuPrices, false, config),
     "━━━━━━━━━━━━━━━━━━",
     `📦 Total piezas: ${pieces}`,
     `📅 Entrega: ${session.schedule.name} ${session.schedule.timeWindow}`,
@@ -278,13 +439,28 @@ function updateConfirmationMessage(session, config) {
   ].join("\n");
 }
 
-function productUpdateMenu(session, action) {
+function updateProductKeys(session, action, config) {
+  const activeKeys = activeProducts(config).map((product) => product.id);
+  if (action === "ADD") return activeKeys;
+  return [
+    ...new Set([
+      ...activeKeys,
+      ...Object.keys(session.quantities || {}).filter(
+        (key) => Number(session.quantities[key] || 0) > 0,
+      ),
+    ]),
+  ];
+}
+
+function productUpdateMenu(session, action, config, keys) {
   const verb = action === "ADD" ? "agregar" : "quitar";
+  const productKeys = keys || updateProductKeys(session, action, config);
   return [
     `¿Qué producto deseas ${verb}?`,
-    `1️⃣ - Conchitas Chocolate (actual: ${Number(session.quantities.chocolate || 0)})`,
-    `2️⃣ - Conchitas Vainilla (actual: ${Number(session.quantities.vanilla || 0)})`,
-    `3️⃣ - Bolillos (actual: ${Number(session.quantities.bolillo || 0)})`,
+    ...productKeys.map((key, index) => {
+      const product = productDefinition(key, config);
+      return `${index + 1} - ${product.name || product.displayName} (actual: ${Number(session.quantities[key] || 0)})`;
+    }),
   ].join("\n");
 }
 
@@ -313,6 +489,8 @@ function restoreUpdate(session) {
   delete restored.updateBackup;
   delete restored.updateAction;
   delete restored.updateProductKey;
+  delete restored.updateProductKeys;
+  delete restored.updateScheduleOptions;
   return restored;
 }
 
@@ -321,6 +499,8 @@ function finishUpdate(session) {
   delete finished.updateBackup;
   delete finished.updateAction;
   delete finished.updateProductKey;
+  delete finished.updateProductKeys;
+  delete finished.updateScheduleOptions;
   return finished;
 }
 
@@ -372,7 +552,13 @@ function updatedMessage(session, config) {
   return lines.join("\n");
 }
 
-function newSession({ chatId, customerName, customerPhone, now = new Date() }) {
+function newSession({
+  chatId,
+  customerName,
+  customerPhone,
+  config,
+  now = new Date(),
+}) {
   return {
     orderId: `CHAT-${now.getTime()}-${Math.random()
       .toString(36)
@@ -384,6 +570,7 @@ function newSession({ chatId, customerName, customerPhone, now = new Date() }) {
     step: "MENU",
     quantities: {},
     productOrder: [],
+    menuProductKeys: config ? menuProductKeys(config) : [],
     productIndex: 0,
     schedule: null,
     fulfillment: null,
@@ -403,6 +590,7 @@ function advanceConversation(session, input, config, now = new Date()) {
         chatId: session.chatId,
         customerName: session.customerName,
         customerPhone: session.customerPhone,
+        config,
         now,
       });
       return {
@@ -430,6 +618,7 @@ function advanceConversation(session, input, config, now = new Date()) {
         chatId: session.chatId,
         customerName: session.customerName,
         customerPhone: session.customerPhone,
+        config,
         now,
       });
       return {
@@ -475,12 +664,17 @@ function advanceConversation(session, input, config, now = new Date()) {
   }
 
   if (session.step === "MENU") {
-    const productOrder = PRODUCT_ORDERS[answer];
+    const productKeys =
+      session.menuProductKeys?.length
+        ? session.menuProductKeys
+        : menuProductKeys(config);
+    const productOrder = productOrderFromAnswer(answer, productKeys);
     if (!productOrder) {
+      const lastOption = productKeys.length + (productKeys.length > 1 ? 1 : 0);
       return {
         session,
         messages: [
-          "Por favor responde 1, 2, 3 o 4 para elegir una opción del menú.",
+          `Por favor responde con un número del 1 al ${lastOption} para elegir una opción del menú.`,
         ],
       };
     }
@@ -498,6 +692,7 @@ function advanceConversation(session, input, config, now = new Date()) {
           productOrder[0],
           true,
           config.minimumOrderPieces,
+          config,
         ),
       ],
     };
@@ -516,7 +711,11 @@ function advanceConversation(session, input, config, now = new Date()) {
     const productKey = session.productOrder[session.productIndex];
     const quantities = { ...session.quantities, [productKey]: quantity };
     const nextIndex = session.productIndex + 1;
-    const acknowledgement = quantityAcknowledgement(productKey, quantity);
+    const acknowledgement = quantityAcknowledgement(
+      productKey,
+      quantity,
+      config,
+    );
 
     if (nextIndex < session.productOrder.length) {
       return {
@@ -533,6 +732,7 @@ function advanceConversation(session, input, config, now = new Date()) {
               session.productOrder[nextIndex],
               false,
               config.minimumOrderPieces,
+              config,
             ),
           ].join("\n"),
         ],
@@ -557,17 +757,20 @@ function advanceConversation(session, input, config, now = new Date()) {
               session.productOrder[0],
               true,
               config.minimumOrderPieces,
+              config,
             ),
           ].join("\n"),
         ],
       };
     }
 
+    const choices = scheduleOptions(config, now);
     const next = {
       ...session,
       step: "DAY",
       quantities,
       productIndex: nextIndex,
+      scheduleOptions: choices,
     };
     return {
       session: next,
@@ -576,11 +779,21 @@ function advanceConversation(session, input, config, now = new Date()) {
   }
 
   if (session.step === "DAY") {
-    const schedule = scheduleFromAnswer(answer, config, now);
+    const schedule = scheduleFromAnswer(
+      answer,
+      config,
+      now,
+      session.scheduleOptions,
+    );
     if (!schedule) {
       return {
         session,
-        messages: ["Responde 1 para Miércoles o 2 para Sábado."],
+        messages: [
+          scheduleMenu(
+            session.scheduleOptions || [],
+            "Selecciona una de las fechas disponibles:",
+          ),
+        ],
       };
     }
     return {
@@ -589,20 +802,22 @@ function advanceConversation(session, input, config, now = new Date()) {
         [
           `✅ ${schedule.name} anotado!`,
           "",
-          "🚗 ¿Cómo prefieres recibir tu pedido?",
-          "1️⃣ - Pickup GRATIS (lo recojo yo)",
-          "2️⃣ - Delivery a domicilio",
+          fulfillmentMenu(schedule),
         ].join("\n"),
       ],
     };
   }
 
   if (session.step === "FULFILLMENT") {
-    if (answer === "1") {
+    if (answer === "1" && session.schedule.pickupAvailable) {
       const next = {
         ...session,
         step: "CONFIRMATION",
         fulfillment: { type: "PICKUP", city: "", deliveryFee: 0 },
+        schedule: {
+          ...session.schedule,
+          timeWindow: session.schedule.pickupWindow,
+        },
       };
       return {
         session: next,
@@ -613,9 +828,16 @@ function advanceConversation(session, input, config, now = new Date()) {
         ],
       };
     }
-    if (answer === "2") {
+    if (answer === "2" && session.schedule.deliveryAvailable) {
       return {
-        session: { ...session, step: "CITY" },
+        session: {
+          ...session,
+          step: "CITY",
+          schedule: {
+            ...session.schedule,
+            timeWindow: session.schedule.deliveryWindow,
+          },
+        },
         messages: [
           [
             "🚗 ¿En qué ciudad necesitas delivery?",
@@ -627,7 +849,7 @@ function advanceConversation(session, input, config, now = new Date()) {
     }
     return {
       session,
-      messages: ["Responde 1 para Pickup o 2 para Delivery."],
+      messages: [fulfillmentMenu(session.schedule)],
     };
   }
 
@@ -704,37 +926,57 @@ function advanceConversation(session, input, config, now = new Date()) {
 
     if (option === "1" || option === "2") {
       const updateAction = option === "1" ? "ADD" : "REMOVE";
+      const productKeys = updateProductKeys(
+        session,
+        updateAction,
+        config,
+      );
       const next = {
         ...session,
         step: "UPDATE_PRODUCT",
         updateAction,
+        updateProductKeys: productKeys,
       };
       return {
         session: next,
-        messages: [productUpdateMenu(next, updateAction)],
+        messages: [
+          productUpdateMenu(next, updateAction, config, productKeys),
+        ],
       };
     }
     if (option === "3") {
+      const choices = scheduleOptions(
+        config,
+        now,
+        session.fulfillment?.type || "",
+      );
       return {
-        session: { ...session, step: "UPDATE_DAY" },
+        session: {
+          ...session,
+          step: "UPDATE_DAY",
+          updateScheduleOptions: choices,
+        },
         messages: [
-          [
+          scheduleMenu(
+            choices,
             "📅 ¿Para qué día quieres cambiar tu pedido?",
-            `1️⃣ - Miércoles (${config.deliveryWindows.wednesday})`,
-            `2️⃣ - Sábado (${config.deliveryWindows.saturday})`,
-          ].join("\n"),
+          ),
         ],
       };
     }
     if (option === "4") {
+      const currentSchedule = scheduleAvailability(
+        session.schedule,
+        config,
+      );
       return {
-        session: { ...session, step: "UPDATE_FULFILLMENT" },
+        session: {
+          ...session,
+          step: "UPDATE_FULFILLMENT",
+          schedule: currentSchedule,
+        },
         messages: [
-          [
-            "🚗 ¿Cómo prefieres recibir tu pedido?",
-            "1️⃣ - Pickup GRATIS (lo recojo yo)",
-            "2️⃣ - Delivery a domicilio",
-          ].join("\n"),
+          fulfillmentMenu(currentSchedule),
         ],
       };
     }
@@ -764,18 +1006,21 @@ function advanceConversation(session, input, config, now = new Date()) {
   }
 
   if (session.step === "UPDATE_PRODUCT") {
-    const productKey =
-      answer === "1"
-        ? "chocolate"
-        : answer === "2"
-          ? "vanilla"
-          : answer === "3"
-            ? "bolillo"
-            : "";
+    const productKeys =
+      session.updateProductKeys ||
+      updateProductKeys(session, session.updateAction, config);
+    const productKey = productKeys[Number(answer) - 1] || "";
     if (!productKey) {
       return {
         session,
-        messages: ["Responde 1, 2 o 3 para elegir el producto."],
+        messages: [
+          productUpdateMenu(
+            session,
+            session.updateAction,
+            config,
+            productKeys,
+          ),
+        ],
       };
     }
     const actionText =
@@ -787,7 +1032,7 @@ function advanceConversation(session, input, config, now = new Date()) {
         updateProductKey: productKey,
       },
       messages: [
-        `¿Cuántas ${PRODUCTS[productKey].promptName} deseas ${actionText}?`,
+        `¿Cuántas ${productDefinition(productKey, config).promptName} deseas ${actionText}?`,
       ],
     };
   }
@@ -809,7 +1054,7 @@ function advanceConversation(session, input, config, now = new Date()) {
       return {
         session,
         messages: [
-          `Tu pedido tiene ${currentQuantity} ${PRODUCTS[productKey].promptName}. Escribe una cantidad menor o igual.`,
+          `Tu pedido tiene ${currentQuantity} ${productDefinition(productKey, config).promptName}. Escribe una cantidad menor o igual.`,
         ],
       };
     }
@@ -841,17 +1086,32 @@ function advanceConversation(session, input, config, now = new Date()) {
   }
 
   if (session.step === "UPDATE_DAY") {
-    const schedule = scheduleFromAnswer(answer, config, now);
+    const schedule = scheduleFromAnswer(
+      answer,
+      config,
+      now,
+      session.updateScheduleOptions,
+    );
     if (!schedule) {
       return {
         session,
-        messages: ["Responde 1 para Miércoles o 2 para Sábado."],
+        messages: [
+          scheduleMenu(
+            session.updateScheduleOptions || [],
+            "Selecciona una de las fechas disponibles:",
+          ),
+        ],
       };
     }
+    const fulfillmentType = session.fulfillment?.type;
+    const timeWindow =
+      fulfillmentType === "PICKUP"
+        ? schedule.pickupWindow
+        : schedule.deliveryWindow;
     const next = {
       ...session,
       step: "UPDATE_CONFIRMATION",
-      schedule,
+      schedule: { ...schedule, timeWindow },
     };
     return {
       session: next,
@@ -860,11 +1120,15 @@ function advanceConversation(session, input, config, now = new Date()) {
   }
 
   if (session.step === "UPDATE_FULFILLMENT") {
-    if (answer === "1") {
+    if (answer === "1" && session.schedule.pickupAvailable) {
       const next = {
         ...session,
         step: "UPDATE_CONFIRMATION",
         fulfillment: { type: "PICKUP", city: "", deliveryFee: 0 },
+        schedule: {
+          ...session.schedule,
+          timeWindow: session.schedule.pickupWindow,
+        },
         deliveryAddress: "",
         addressType: "",
       };
@@ -873,9 +1137,16 @@ function advanceConversation(session, input, config, now = new Date()) {
         messages: [updateConfirmationMessage(next, config)],
       };
     }
-    if (answer === "2") {
+    if (answer === "2" && session.schedule.deliveryAvailable) {
       return {
-        session: { ...session, step: "UPDATE_CITY" },
+        session: {
+          ...session,
+          step: "UPDATE_CITY",
+          schedule: {
+            ...session.schedule,
+            timeWindow: session.schedule.deliveryWindow,
+          },
+        },
         messages: [
           [
             "🚗 ¿En qué ciudad necesitas delivery?",
@@ -887,7 +1158,7 @@ function advanceConversation(session, input, config, now = new Date()) {
     }
     return {
       session,
-      messages: ["Responde 1 para Pickup GRATIS o 2 para Delivery."],
+      messages: [fulfillmentMenu(session.schedule)],
     };
   }
 
@@ -1049,13 +1320,16 @@ function advanceConversation(session, input, config, now = new Date()) {
 function buildTextOrder(session, confirmationMessage, config) {
   const products = Object.entries(session.quantities)
     .filter(([, quantity]) => Number(quantity) > 0)
-    .map(([productKey, quantity]) => ({
-      id: PRODUCTS[productKey].productId,
-      name: PRODUCTS[productKey].sheetName,
-      quantity,
-      price: Number(config.menuPrices[productKey]) * 1000,
-      currency: "CAD",
-    }));
+    .map(([productKey, quantity]) => {
+      const product = productDefinition(productKey, config);
+      return {
+        id: product.productId || product.id,
+        name: product.sheetName,
+        quantity,
+        price: Number(config.menuPrices[productKey] || product.price || 0) * 1000,
+        currency: "CAD",
+      };
+    });
   const logistics =
     session.fulfillment.type === "PICKUP"
       ? { id: "pickup", name: "Recoger", price: 0 }
@@ -1119,6 +1393,21 @@ class ConversationStateStore {
   set(chatId, session) {
     if (session) this.sessions[chatId] = session;
     else delete this.sessions[chatId];
+    this.save();
+  }
+
+  updateByOrderId(orderId, updater) {
+    let updated = false;
+    for (const [chatId, session] of Object.entries(this.sessions)) {
+      if (String(session.orderId) !== String(orderId)) continue;
+      this.sessions[chatId] = updater({ ...session });
+      updated = true;
+    }
+    if (updated) this.save();
+    return updated;
+  }
+
+  save() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(this.sessions, null, 2));
   }
@@ -1130,12 +1419,15 @@ module.exports = {
   confirmedMessage,
   ConversationStateStore,
   finalSummary,
+  catalogProducts,
+  configuredSchedules,
   menuMessage,
   newSession,
   nextWeekdayDate,
   orderSummary,
   parseDeliveryAddress,
   PRODUCTS,
+  scheduleOptions,
   subtotal,
   totalPieces,
   updatedMessage,
