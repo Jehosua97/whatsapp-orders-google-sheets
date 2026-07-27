@@ -180,7 +180,7 @@ through:
 2. Chocolate, vanilla, and bolillo quantities.
 3. Minimum-piece validation.
 4. Wednesday or Saturday.
-5. Pickup or delivery.
+5. Free pickup or paid delivery.
 6. Brampton or Mississauga when delivery is selected.
 7. Final `SI` or `NO` confirmation.
 
@@ -188,6 +188,19 @@ Incomplete and canceled conversations are not written to Google Sheets. A
 confirmed delivery remains available for the customer to share their WhatsApp
 location. Conversation progress is stored in `.data/conversation-state.json`,
 which is excluded from Git.
+
+After confirmation, customers can write `ACTUALIZAR PEDIDO` or use natural
+words such as `agregar`, `quitar`, `cambiar`, or `cancelar`. The bot reminds
+them of the current order and offers these actions:
+
+- Add or remove a product quantity.
+- Change the delivery day.
+- Switch between free pickup and delivery.
+- Cancel the complete order with a second confirmation.
+
+Changes replace the existing order under the same ID only after `SI`.
+Canceled orders remain in the worksheet for history, are excluded from
+production totals, and appear as inactive rows.
 
 ### Catalog fulfillment items
 

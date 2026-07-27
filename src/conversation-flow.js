@@ -43,6 +43,17 @@ function normalizeAnswer(value) {
     .toUpperCase();
 }
 
+function updateKeyword(value) {
+  const answer = normalizeAnswer(value);
+  return /\b(ACTUALIZAR|AGREGAR|ANADIR|QUITAR|ELIMINAR|CAMBIAR|MODIFICAR|CANCELAR|CANCELACION)\b/.test(
+    answer,
+  );
+}
+
+function cancelKeyword(value) {
+  return /\b(CANCELAR|CANCELACION)\b/.test(normalizeAnswer(value));
+}
+
 function money(value) {
   return `$${Number(value || 0).toFixed(2)}`;
 }
@@ -177,7 +188,7 @@ function finalSummary(session, config) {
   const deliveryFee = Number(session.fulfillment.deliveryFee || 0);
   const type =
     session.fulfillment.type === "PICKUP"
-      ? "Pickup"
+      ? "Pickup GRATIS"
       : `Delivery en ${
           session.fulfillment.city === "BRAMPTON"
             ? "Brampton"
@@ -202,6 +213,82 @@ function finalSummary(session, config) {
   ].join("\n");
 }
 
+function currentOrderMessage(session, config) {
+  const details = finalSummary(session, config)
+    .split("\n")
+    .slice(0, -4);
+  return [
+    "📋 ESTE ES TU PEDIDO ACTUAL:",
+    ...details.slice(1),
+    "",
+    "¿Qué deseas hacer?",
+    "1️⃣ - Agregar productos",
+    "2️⃣ - Quitar productos",
+    "3️⃣ - Cambiar día de entrega",
+    "4️⃣ - Cambiar Pickup / Delivery",
+    "5️⃣ - Cancelar pedido",
+    "6️⃣ - No hacer cambios",
+    "",
+    "También puedes escribir: agregar, quitar, cambiar o cancelar.",
+  ].join("\n");
+}
+
+function updateConfirmationMessage(session, config) {
+  const details = finalSummary(session, config)
+    .split("\n")
+    .slice(0, -4);
+  return [
+    "📝 ASÍ QUEDARÍA TU PEDIDO:",
+    ...details.slice(1),
+    "",
+    "¿Quieres guardar estos cambios?",
+    "✅ Escribe SI para actualizar",
+    "❌ Escribe NO para conservar el pedido anterior",
+  ].join("\n");
+}
+
+function productUpdateMenu(session, action) {
+  const verb = action === "ADD" ? "agregar" : "quitar";
+  return [
+    `¿Qué producto deseas ${verb}?`,
+    `1️⃣ - Conchitas Chocolate (actual: ${Number(session.quantities.chocolate || 0)})`,
+    `2️⃣ - Conchitas Vainilla (actual: ${Number(session.quantities.vanilla || 0)})`,
+    `3️⃣ - Bolillos (actual: ${Number(session.quantities.bolillo || 0)})`,
+  ].join("\n");
+}
+
+function updateBackup(session) {
+  return {
+    quantities: { ...session.quantities },
+    schedule: { ...session.schedule },
+    fulfillment: { ...session.fulfillment },
+  };
+}
+
+function restoreUpdate(session) {
+  const backup = session.updateBackup;
+  if (!backup) return { ...session, step: "COMPLETED" };
+  const restored = {
+    ...session,
+    step: "COMPLETED",
+    quantities: { ...backup.quantities },
+    schedule: { ...backup.schedule },
+    fulfillment: { ...backup.fulfillment },
+  };
+  delete restored.updateBackup;
+  delete restored.updateAction;
+  delete restored.updateProductKey;
+  return restored;
+}
+
+function finishUpdate(session) {
+  const finished = { ...session, step: "COMPLETED" };
+  delete finished.updateBackup;
+  delete finished.updateAction;
+  delete finished.updateProductKey;
+  return finished;
+}
+
 function confirmedMessage(session) {
   const lines = [
     `🎉 ¡Pedido confirmado, ${customerLabel(session.customerName)}!`,
@@ -221,6 +308,31 @@ function confirmedMessage(session) {
     "📱 Te contactaremos si hay algún cambio.",
     "",
     "¡Que los disfrutes mucho! 😊",
+    "",
+    "📝 Para cambiar tu orden escribe ACTUALIZAR PEDIDO.",
+    "También puedes escribir agregar, quitar o cancelar.",
+  );
+  return lines.join("\n");
+}
+
+function updatedMessage(session, config) {
+  const details = finalSummary(session, config)
+    .split("\n")
+    .slice(0, -4);
+  const lines = [
+    "✅ ¡Tu pedido fue actualizado!",
+    "",
+    ...details,
+  ];
+  if (session.fulfillment.type === "DELIVERY") {
+    lines.push(
+      "",
+      "📍 Comparte tu ubicación si también cambió la dirección de entrega.",
+    );
+  }
+  lines.push(
+    "",
+    "Para hacer otro cambio escribe ACTUALIZAR PEDIDO.",
   );
   return lines.join("\n");
 }
@@ -246,6 +358,84 @@ function newSession({ chatId, customerName, customerPhone, now = new Date() }) {
 
 function advanceConversation(session, input, config, now = new Date()) {
   const answer = normalizeAnswer(input);
+  const restartCommands = ["HOLA", "MENU", "PEDIDO", "ORDEN"];
+
+  if (session.step === "COMPLETED") {
+    if (restartCommands.includes(answer)) {
+      const next = newSession({
+        chatId: session.chatId,
+        customerName: session.customerName,
+        customerPhone: session.customerPhone,
+        now,
+      });
+      return {
+        session: next,
+        messages: [menuMessage(next.customerName, config)],
+      };
+    }
+    if (updateKeyword(answer)) {
+      const next = {
+        ...session,
+        step: "UPDATE_MENU",
+        updateBackup: updateBackup(session),
+      };
+      return {
+        session: next,
+        messages: [currentOrderMessage(next, config)],
+      };
+    }
+    return { session, messages: [] };
+  }
+
+  if (session.step === "CANCELED") {
+    if (restartCommands.includes(answer)) {
+      const next = newSession({
+        chatId: session.chatId,
+        customerName: session.customerName,
+        customerPhone: session.customerPhone,
+        now,
+      });
+      return {
+        session: next,
+        messages: [menuMessage(next.customerName, config)],
+      };
+    }
+    return {
+      session,
+      messages: [
+        "Este pedido está cancelado. Escribe HOLA para iniciar uno nuevo.",
+      ],
+    };
+  }
+
+  if (
+    cancelKeyword(answer) &&
+    String(session.step).startsWith("UPDATE")
+  ) {
+    return {
+      session: { ...session, step: "CANCEL_CONFIRMATION" },
+      messages: [
+        [
+          "⚠️ ¿Seguro que deseas cancelar todo el pedido?",
+          "Escribe SI para cancelarlo o NO para conservarlo.",
+        ].join("\n"),
+      ],
+    };
+  }
+
+  if (
+    cancelKeyword(answer) &&
+    !String(session.step).startsWith("UPDATE") &&
+    session.step !== "CANCEL_CONFIRMATION"
+  ) {
+    return {
+      session: null,
+      messages: [
+        "Pedido cancelado. Escribe HOLA cuando quieras iniciar uno nuevo.",
+      ],
+      canceled: true,
+    };
+  }
 
   if (session.step === "MENU") {
     const productOrder = PRODUCT_ORDERS[answer];
@@ -363,7 +553,7 @@ function advanceConversation(session, input, config, now = new Date()) {
           `✅ ${schedule.name} anotado!`,
           "",
           "🚗 ¿Cómo prefieres recibir tu pedido?",
-          "1️⃣ - Pickup (lo recojo yo)",
+          "1️⃣ - Pickup GRATIS (lo recojo yo)",
           "2️⃣ - Delivery a domicilio",
         ].join("\n"),
       ],
@@ -380,7 +570,7 @@ function advanceConversation(session, input, config, now = new Date()) {
       return {
         session: next,
         messages: [
-          ["✅ Pickup seleccionado!", "", finalSummary(next, config)].join(
+          ["✅ Pickup GRATIS seleccionado!", "", finalSummary(next, config)].join(
             "\n",
           ),
         ],
@@ -439,6 +629,274 @@ function advanceConversation(session, input, config, now = new Date()) {
     };
   }
 
+  if (session.step === "UPDATE_MENU") {
+    let option = answer;
+    if (/\b(AGREGAR|ANADIR)\b/.test(answer)) option = "1";
+    if (/\b(QUITAR|ELIMINAR)\b/.test(answer)) option = "2";
+    if (/\b(DIA|FECHA)\b/.test(answer)) option = "3";
+    if (/\b(PICKUP|DELIVERY|ENTREGA|RECOGER)\b/.test(answer)) option = "4";
+    if (/\b(CANCELAR|CANCELACION)\b/.test(answer)) option = "5";
+
+    if (option === "1" || option === "2") {
+      const updateAction = option === "1" ? "ADD" : "REMOVE";
+      const next = {
+        ...session,
+        step: "UPDATE_PRODUCT",
+        updateAction,
+      };
+      return {
+        session: next,
+        messages: [productUpdateMenu(next, updateAction)],
+      };
+    }
+    if (option === "3") {
+      return {
+        session: { ...session, step: "UPDATE_DAY" },
+        messages: [
+          [
+            "📅 ¿Para qué día quieres cambiar tu pedido?",
+            `1️⃣ - Miércoles (${config.deliveryWindows.wednesday})`,
+            `2️⃣ - Sábado (${config.deliveryWindows.saturday})`,
+          ].join("\n"),
+        ],
+      };
+    }
+    if (option === "4") {
+      return {
+        session: { ...session, step: "UPDATE_FULFILLMENT" },
+        messages: [
+          [
+            "🚗 ¿Cómo prefieres recibir tu pedido?",
+            "1️⃣ - Pickup GRATIS (lo recojo yo)",
+            "2️⃣ - Delivery a domicilio",
+          ].join("\n"),
+        ],
+      };
+    }
+    if (option === "5") {
+      return {
+        session: { ...session, step: "CANCEL_CONFIRMATION" },
+        messages: [
+          [
+            "⚠️ ¿Seguro que deseas cancelar todo el pedido?",
+            "Escribe SI para cancelarlo o NO para conservarlo.",
+          ].join("\n"),
+        ],
+      };
+    }
+    if (option === "6") {
+      return {
+        session: restoreUpdate(session),
+        messages: ["Perfecto, conservamos tu pedido sin cambios."],
+      };
+    }
+    return {
+      session,
+      messages: [
+        "Responde del 1 al 6 para elegir qué deseas actualizar.",
+      ],
+    };
+  }
+
+  if (session.step === "UPDATE_PRODUCT") {
+    const productKey =
+      answer === "1"
+        ? "chocolate"
+        : answer === "2"
+          ? "vanilla"
+          : answer === "3"
+            ? "bolillo"
+            : "";
+    if (!productKey) {
+      return {
+        session,
+        messages: ["Responde 1, 2 o 3 para elegir el producto."],
+      };
+    }
+    const actionText =
+      session.updateAction === "ADD" ? "agregar" : "quitar";
+    return {
+      session: {
+        ...session,
+        step: "UPDATE_QUANTITY",
+        updateProductKey: productKey,
+      },
+      messages: [
+        `¿Cuántas ${PRODUCTS[productKey].promptName} deseas ${actionText}?`,
+      ],
+    };
+  }
+
+  if (session.step === "UPDATE_QUANTITY") {
+    if (!/^\d{1,3}$/.test(answer) || Number(answer) < 1) {
+      return {
+        session,
+        messages: ["Escribe una cantidad mayor a 0 usando números."],
+      };
+    }
+    const quantity = Number(answer);
+    const productKey = session.updateProductKey;
+    const currentQuantity = Number(session.quantities[productKey] || 0);
+    if (
+      session.updateAction === "REMOVE" &&
+      quantity > currentQuantity
+    ) {
+      return {
+        session,
+        messages: [
+          `Tu pedido tiene ${currentQuantity} ${PRODUCTS[productKey].promptName}. Escribe una cantidad menor o igual.`,
+        ],
+      };
+    }
+    const newQuantity =
+      session.updateAction === "ADD"
+        ? currentQuantity + quantity
+        : currentQuantity - quantity;
+    const quantities = {
+      ...session.quantities,
+      [productKey]: newQuantity,
+    };
+    if (totalPieces(quantities) < config.minimumOrderPieces) {
+      return {
+        session,
+        messages: [
+          `El pedido debe conservar al menos ${config.minimumOrderPieces} piezas. Puedes quitar menos o cancelar todo el pedido.`,
+        ],
+      };
+    }
+    const next = {
+      ...session,
+      step: "UPDATE_CONFIRMATION",
+      quantities,
+    };
+    return {
+      session: next,
+      messages: [updateConfirmationMessage(next, config)],
+    };
+  }
+
+  if (session.step === "UPDATE_DAY") {
+    const schedule = scheduleFromAnswer(answer, config, now);
+    if (!schedule) {
+      return {
+        session,
+        messages: ["Responde 1 para Miércoles o 2 para Sábado."],
+      };
+    }
+    const next = {
+      ...session,
+      step: "UPDATE_CONFIRMATION",
+      schedule,
+    };
+    return {
+      session: next,
+      messages: [updateConfirmationMessage(next, config)],
+    };
+  }
+
+  if (session.step === "UPDATE_FULFILLMENT") {
+    if (answer === "1") {
+      const next = {
+        ...session,
+        step: "UPDATE_CONFIRMATION",
+        fulfillment: { type: "PICKUP", city: "", deliveryFee: 0 },
+      };
+      return {
+        session: next,
+        messages: [updateConfirmationMessage(next, config)],
+      };
+    }
+    if (answer === "2") {
+      return {
+        session: { ...session, step: "UPDATE_CITY" },
+        messages: [
+          [
+            "🚗 ¿En qué ciudad necesitas delivery?",
+            `1️⃣ - Brampton (${money(config.deliveryFees.brampton)})`,
+            `2️⃣ - Mississauga (${money(config.deliveryFees.mississauga)})`,
+          ].join("\n"),
+        ],
+      };
+    }
+    return {
+      session,
+      messages: ["Responde 1 para Pickup GRATIS o 2 para Delivery."],
+    };
+  }
+
+  if (session.step === "UPDATE_CITY") {
+    const city =
+      answer === "1"
+        ? "BRAMPTON"
+        : answer === "2"
+          ? "MISSISSAUGA"
+          : "";
+    if (!city) {
+      return {
+        session,
+        messages: ["Responde 1 para Brampton o 2 para Mississauga."],
+      };
+    }
+    const next = {
+      ...session,
+      step: "UPDATE_CONFIRMATION",
+      fulfillment: {
+        type: "DELIVERY",
+        city,
+        deliveryFee:
+          city === "BRAMPTON"
+            ? config.deliveryFees.brampton
+            : config.deliveryFees.mississauga,
+      },
+    };
+    return {
+      session: next,
+      messages: [updateConfirmationMessage(next, config)],
+    };
+  }
+
+  if (session.step === "UPDATE_CONFIRMATION") {
+    if (answer === "SI") {
+      return {
+        session: finishUpdate(session),
+        messages: [],
+        updated: true,
+      };
+    }
+    if (answer === "NO") {
+      return {
+        session: restoreUpdate(session),
+        messages: ["Conservamos tu pedido anterior sin cambios."],
+      };
+    }
+    return {
+      session,
+      messages: ["Responde SI para actualizar o NO para conservarlo."],
+    };
+  }
+
+  if (session.step === "CANCEL_CONFIRMATION") {
+    if (answer === "SI" || answer === "SI CANCELAR") {
+      const canceled = finishUpdate(session);
+      canceled.step = "CANCELED";
+      return {
+        session: canceled,
+        messages: [],
+        orderCanceled: true,
+      };
+    }
+    if (answer === "NO") {
+      return {
+        session: restoreUpdate(session),
+        messages: ["Perfecto, tu pedido sigue confirmado."],
+      };
+    }
+    return {
+      session,
+      messages: ["Responde SI para cancelar o NO para conservarlo."],
+    };
+  }
+
   if (session.step === "CONFIRMATION") {
     if (answer === "SI") {
       return {
@@ -460,22 +918,6 @@ function advanceConversation(session, input, config, now = new Date()) {
       session,
       messages: ["Responde SI para confirmar o NO para cancelar."],
     };
-  }
-
-  if (session.step === "COMPLETED") {
-    if (["HOLA", "MENU", "PEDIDO", "ORDEN"].includes(answer)) {
-      const next = newSession({
-        chatId: session.chatId,
-        customerName: session.customerName,
-        customerPhone: session.customerPhone,
-        now,
-      });
-      return {
-        session: next,
-        messages: [menuMessage(next.customerName, config)],
-      };
-    }
-    return { session, messages: [] };
   }
 
   return { session: null, messages: [] };
@@ -568,4 +1010,5 @@ module.exports = {
   PRODUCTS,
   subtotal,
   totalPieces,
+  updatedMessage,
 };

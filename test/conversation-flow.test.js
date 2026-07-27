@@ -38,6 +38,25 @@ function answer(session, input) {
   return advanceConversation(session, input, config, monday);
 }
 
+function completedPickupSession() {
+  return {
+    ...newSession({
+      chatId: "test@lid",
+      customerName: "Ana",
+      customerPhone: "14370000000",
+      now: monday,
+    }),
+    step: "COMPLETED",
+    quantities: { chocolate: 5, vanilla: 0, bolillo: 3 },
+    schedule: {
+      name: "Sábado",
+      date: "2026-08-01",
+      timeWindow: "después de las 10:00 AM",
+    },
+    fulfillment: { type: "PICKUP", city: "", deliveryFee: 0 },
+  };
+}
+
 test("recorre el flujo completo de pickup del ejemplo", () => {
   let session = newSession({
     chatId: "test@lid",
@@ -75,7 +94,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   result = answer(session, "1");
   session = result.session;
   assert.equal(session.step, "CONFIRMATION");
-  assert.match(result.messages[0], /Pickup seleccionado/);
+  assert.match(result.messages[0], /Pickup GRATIS seleccionado/);
   assert.match(result.messages[0], /TOTAL: \$25\.00/);
 
   result = answer(session, "SI");
@@ -174,6 +193,75 @@ test("NO cancela sin completar el pedido", () => {
   const result = answer(session, "NO");
   assert.equal(result.canceled, true);
   assert.equal(result.session, null);
+});
+
+test("detecta agregar y actualiza cantidades solo despues de SI", () => {
+  let result = answer(completedPickupSession(), "quiero agregar bolillos");
+  let session = result.session;
+  assert.equal(session.step, "UPDATE_MENU");
+  assert.match(result.messages[0], /ESTE ES TU PEDIDO ACTUAL/);
+
+  session = answer(session, "1").session;
+  session = answer(session, "3").session;
+  result = answer(session, "2");
+  session = result.session;
+  assert.equal(session.step, "UPDATE_CONFIRMATION");
+  assert.equal(session.quantities.bolillo, 5);
+  assert.match(result.messages[0], /TOTAL: \$30\.00/);
+
+  result = answer(session, "SI");
+  assert.equal(result.updated, true);
+  assert.equal(result.session.step, "COMPLETED");
+  assert.equal(result.session.quantities.bolillo, 5);
+});
+
+test("NO descarta una modificacion y restaura el pedido anterior", () => {
+  let session = answer(completedPickupSession(), "quitar").session;
+  session = answer(session, "2").session;
+  session = answer(session, "1").session;
+  session = answer(session, "2").session;
+  assert.equal(session.quantities.chocolate, 3);
+
+  const result = answer(session, "NO");
+  assert.equal(result.session.step, "COMPLETED");
+  assert.equal(result.session.quantities.chocolate, 5);
+});
+
+test("no permite quitar productos si quedan menos del minimo", () => {
+  let session = answer(completedPickupSession(), "quitar").session;
+  session = answer(session, "2").session;
+  session = answer(session, "1").session;
+  const result = answer(session, "4");
+
+  assert.equal(result.session.step, "UPDATE_QUANTITY");
+  assert.match(result.messages[0], /al menos 5 piezas/i);
+});
+
+test("permite cambiar de pickup gratis a delivery", () => {
+  let session = answer(completedPickupSession(), "cambiar entrega").session;
+  session = answer(session, "4").session;
+  session = answer(session, "2").session;
+  const result = answer(session, "2");
+
+  assert.equal(result.session.step, "UPDATE_CONFIRMATION");
+  assert.equal(result.session.fulfillment.type, "DELIVERY");
+  assert.equal(result.session.fulfillment.city, "MISSISSAUGA");
+  assert.match(result.messages[0], /Delivery: \$8\.00/);
+});
+
+test("cancelar un pedido confirmado requiere una segunda confirmacion", () => {
+  let result = answer(completedPickupSession(), "cancelar mi pedido");
+  let session = result.session;
+  assert.equal(session.step, "UPDATE_MENU");
+  assert.match(result.messages[0], /PEDIDO ACTUAL/);
+
+  result = answer(session, "cancelar");
+  session = result.session;
+  assert.equal(session.step, "CANCEL_CONFIRMATION");
+
+  result = answer(session, "SI");
+  assert.equal(result.orderCanceled, true);
+  assert.equal(result.session.step, "CANCELED");
 });
 
 test("el estado conversacional persiste en disco", () => {

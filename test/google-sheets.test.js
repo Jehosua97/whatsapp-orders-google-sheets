@@ -126,6 +126,10 @@ test("coloca pedidos entregados al final", () => {
   assert.equal(kitchenStatus(orders[0]), "Entregado");
 });
 
+test("un pedido cancelado queda inactivo", () => {
+  assert.equal(kitchenStatus({ kitchenStatus: "Cancelado" }), "Cancelado");
+});
+
 test("guarda en la hoja interna un status editado por cocina", async () => {
   let batchRequest;
   const store = new GoogleSheetsOrderStore({
@@ -160,6 +164,66 @@ test("guarda en la hoja interna un status editado por cocina", async () => {
     "'Pedidos'!Z4",
   );
   assert.deepEqual(batchRequest.requestBody.data[0].values, [["Entregado"]]);
+});
+
+test("reemplaza productos conservando el mismo ID de pedido", async () => {
+  let clearedRanges;
+  let updateRequest;
+  const store = new GoogleSheetsOrderStore({
+    ordersSheet: "Pedidos",
+    itemsSheet: "Productos",
+  });
+  store.sheets = {
+    spreadsheets: {
+      values: {
+        batchClear: async (request) => {
+          clearedRanges = request.requestBody.ranges;
+        },
+        get: async () => ({ data: { values: [["Fecha"], ["dato"]] } }),
+        batchUpdate: async (request) => {
+          updateRequest = request;
+        },
+      },
+    },
+  };
+  store.getOrder = async () => ({
+    orderId: "CHAT-123",
+    receivedAt: "2026-07-27T15:00:00.000Z",
+    sheetRow: 3,
+  });
+  store.getOrderItems = async () => [
+    { orderId: "CHAT-123", sheetRow: 8 },
+    { orderId: "CHAT-123", sheetRow: 9 },
+  ];
+  store.refreshKitchenViewUnlocked = async () => {};
+
+  await store.replaceOrder({
+    summary: {
+      orderId: "CHAT-123",
+      receivedAt: "nueva",
+      kitchenStatus: "Confirmado",
+    },
+    items: [
+      {
+        orderId: "CHAT-123",
+        productName: "Bolillo",
+        quantity: 5,
+      },
+    ],
+  });
+
+  assert.deepEqual(clearedRanges, [
+    "'Productos'!A8:I8",
+    "'Productos'!A9:I9",
+  ]);
+  assert.equal(
+    updateRequest.requestBody.data[0].range,
+    "'Pedidos'!A3:Z3",
+  );
+  assert.equal(
+    updateRequest.requestBody.data[1].range,
+    "'Productos'!A3:I3",
+  );
 });
 
 test("muestra cuando falta elegir entrega o recogida", () => {

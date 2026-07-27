@@ -159,16 +159,21 @@ function isKitchenProduct(item) {
 }
 
 function kitchenStatus(order) {
-  return String(order.kitchenStatus || "").toLowerCase() === "entregado"
-    ? "Entregado"
-    : "Confirmado";
+  const status = String(order.kitchenStatus || "").toLowerCase();
+  if (status === "entregado") return "Entregado";
+  if (status === "cancelado") return "Cancelado";
+  return "Confirmado";
 }
 
 function buildKitchenTable(orders, itemsByOrder) {
   const sortedOrders = [...orders].sort((left, right) => {
-    const statusDifference =
-      Number(kitchenStatus(left) === "Entregado") -
-      Number(kitchenStatus(right) === "Entregado");
+    const statusRank = (order) => {
+      const status = kitchenStatus(order);
+      if (status === "Confirmado") return 0;
+      if (status === "Entregado") return 1;
+      return 2;
+    };
+    const statusDifference = statusRank(left) - statusRank(right);
     if (statusDifference) return statusDifference;
     return String(right.receivedAt).localeCompare(String(left.receivedAt));
   });
@@ -398,6 +403,7 @@ class GoogleSheetsOrderStore {
               values: [
                 { userEnteredValue: "Confirmado" },
                 { userEnteredValue: "Entregado" },
+                { userEnteredValue: "Cancelado" },
               ],
             },
             strict: true,
@@ -426,6 +432,33 @@ class GoogleSheetsOrderStore {
                 backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 },
                 textFormat: {
                   foregroundColor: { red: 0.4, green: 0.4, blue: 0.4 },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        addConditionalFormatRule: {
+          index: 0,
+          rule: {
+            ranges: [
+              {
+                sheetId: kitchenSheetId,
+                startRowIndex: 2,
+                startColumnIndex: 0,
+                endColumnIndex: KITCHEN_MAX_COLUMNS,
+              },
+            ],
+            booleanRule: {
+              condition: {
+                type: "CUSTOM_FORMULA",
+                values: [{ userEnteredValue: '=$B3="Cancelado"' }],
+              },
+              format: {
+                backgroundColor: { red: 0.96, green: 0.84, blue: 0.84 },
+                textFormat: {
+                  foregroundColor: { red: 0.55, green: 0.15, blue: 0.15 },
                 },
               },
             },
@@ -544,7 +577,10 @@ class GoogleSheetsOrderStore {
       range: `${title}!A2:I`,
     });
     return (response.data.values || [])
-      .map((row) => objectFromRow(row, ITEM_KEYS))
+      .map((row, index) => ({
+        ...objectFromRow(row, ITEM_KEYS),
+        sheetRow: index + 2,
+      }))
       .filter((item) => String(item.orderId) === String(orderId));
   }
 
@@ -626,6 +662,61 @@ class GoogleSheetsOrderStore {
     });
   }
 
+  async replaceOrder(order) {
+    return this.enqueue(async () => {
+      const current = await this.getOrder(order.summary.orderId);
+      if (!current) {
+        throw new Error(`No existe el pedido ${order.summary.orderId}`);
+      }
+      const existingItems = await this.getOrderItems(order.summary.orderId);
+      const ordersTitle = quoteSheetTitle(this.config.ordersSheet);
+      const itemsTitle = quoteSheetTitle(this.config.itemsSheet);
+      const endColumn = columnName(ORDER_HEADERS.length);
+      const updatedSummary = {
+        ...order.summary,
+        receivedAt: current.receivedAt || order.summary.receivedAt,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (existingItems.length) {
+        await this.sheets.spreadsheets.values.batchClear({
+          spreadsheetId: this.config.spreadsheetId,
+          requestBody: {
+            ranges: existingItems.map(
+              (item) => `${itemsTitle}!A${item.sheetRow}:I${item.sheetRow}`,
+            ),
+          },
+        });
+      }
+
+      const itemColumn = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.config.spreadsheetId,
+        range: `${itemsTitle}!A:A`,
+      });
+      const nextItemRow =
+        (itemColumn.data.values?.length || 1) + 1;
+      const lastItemRow = nextItemRow + order.items.length - 1;
+      await this.sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: this.config.spreadsheetId,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: [
+            {
+              range: `${ordersTitle}!A${current.sheetRow}:${endColumn}${current.sheetRow}`,
+              values: [summaryRow(updatedSummary)],
+            },
+            {
+              range: `${itemsTitle}!A${nextItemRow}:I${lastItemRow}`,
+              values: order.items.map(itemRow),
+            },
+          ],
+        },
+      });
+      await this.refreshKitchenViewUnlocked();
+      return updatedSummary;
+    });
+  }
+
   async refreshKitchenViewUnlocked({ syncStatuses = true } = {}) {
     if (syncStatuses) await this.syncKitchenStatusesUnlocked();
     const orders = await this.listOrders();
@@ -664,6 +755,8 @@ class GoogleSheetsOrderStore {
           String(orderId || ""),
           String(status || "").toLowerCase() === "entregado"
             ? "Entregado"
+            : String(status || "").toLowerCase() === "cancelado"
+              ? "Cancelado"
             : String(status || "").toLowerCase() === "confirmado"
               ? "Confirmado"
               : "",

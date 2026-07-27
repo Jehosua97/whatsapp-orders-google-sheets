@@ -11,6 +11,7 @@ const {
   ConversationStateStore,
   menuMessage,
   newSession,
+  updatedMessage,
 } = require("./conversation-flow");
 const {
   deliveryFeeFor,
@@ -228,6 +229,34 @@ async function handleConversationMessage({
     config,
     new Date(),
   );
+
+  if (result.orderCanceled) {
+    await store.updateOrder(session.orderId, {
+      status: "CANCELADO",
+      kitchenStatus: "Cancelado",
+      customerNotes: "Pedido cancelado por el cliente en WhatsApp",
+    });
+    conversationState.set(message.from, result.session);
+    logger.log(`Pedido conversacional cancelado: ${session.orderId}`);
+    await message.reply(
+      [
+        "❌ Tu pedido fue cancelado.",
+        "Ya no se incluirá en las cantidades por preparar.",
+        "",
+        "Escribe HOLA cuando quieras hacer un pedido nuevo.",
+      ].join("\n"),
+    );
+    return true;
+  }
+
+  if (result.updated) {
+    const normalized = buildTextOrder(result.session, message, config);
+    await store.replaceOrder(normalized);
+    conversationState.set(message.from, result.session);
+    logger.log(`Pedido conversacional actualizado: ${session.orderId}`);
+    await message.reply(updatedMessage(result.session, config));
+    return true;
+  }
 
   if (result.completed) {
     const normalized = buildTextOrder(session, message, config);

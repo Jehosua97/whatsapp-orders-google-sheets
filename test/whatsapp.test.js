@@ -118,11 +118,19 @@ test("el manejador guarda solamente despues de recibir SI", async () => {
   );
   const replies = [];
   const savedOrders = [];
+  const replacedOrders = [];
+  const orderUpdates = [];
   const client = {};
   const store = {
     saveOrder: async (order) => {
       savedOrders.push(order);
       return { inserted: true };
+    },
+    replaceOrder: async (order) => {
+      replacedOrders.push(order);
+    },
+    updateOrder: async (orderId, patch) => {
+      orderUpdates.push({ orderId, patch });
     },
   };
   const config = {
@@ -165,4 +173,18 @@ test("el manejador guarda solamente despues de recibir SI", async () => {
   assert.equal(savedOrders.length, 1);
   assert.equal(savedOrders[0].summary.total, 25);
   assert.match(replies.at(-1), /Pedido confirmado, Ana/);
+
+  for (const input of ["agregar", "1", "3", "2", "SI"]) {
+    await send(input);
+  }
+  assert.equal(replacedOrders.length, 1);
+  assert.equal(replacedOrders[0].summary.total, 30);
+  assert.match(replies.at(-1), /pedido fue actualizado/i);
+
+  for (const input of ["cancelar", "5", "SI"]) {
+    await send(input);
+  }
+  assert.equal(orderUpdates.length, 1);
+  assert.equal(orderUpdates[0].patch.kitchenStatus, "Cancelado");
+  assert.match(replies.at(-1), /pedido fue cancelado/i);
 });
