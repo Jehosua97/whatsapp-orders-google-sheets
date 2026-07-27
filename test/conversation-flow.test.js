@@ -11,6 +11,7 @@ const {
   ConversationStateStore,
   menuMessage,
   newSession,
+  parseDeliveryAddress,
   subtotal,
   totalPieces,
 } = require("../src/conversation-flow");
@@ -158,7 +159,7 @@ test("rechaza cantidades y opciones invalidas sin avanzar", () => {
   assert.equal(result.session.productIndex, 0);
 });
 
-test("calcula delivery en Brampton y espera ubicacion despues de confirmar", () => {
+test("calcula delivery en Brampton y solicita la direccion antes de confirmar", () => {
   let session = newSession({
     chatId: "test@lid",
     customerName: "Ana",
@@ -169,15 +170,19 @@ test("calcula delivery en Brampton y espera ubicacion despues de confirmar", () 
     session = answer(session, input).session;
   }
 
+  assert.equal(session.step, "ADDRESS");
+  session = answer(session, "123 Main Street, Brampton ON").session;
   assert.equal(session.step, "CONFIRMATION");
   assert.equal(session.fulfillment.city, "BRAMPTON");
   assert.equal(session.fulfillment.deliveryFee, 5);
+  assert.equal(session.deliveryAddress, "123 Main Street, Brampton ON");
 
   const order = buildTextOrder(session, {}, config);
   assert.equal(order.summary.total, 16.5);
   assert.equal(order.summary.grandTotal, 21.5);
   assert.equal(order.summary.status, "ESPERANDO_DATOS");
-  assert.match(confirmedMessage(session), /Comparte tu ubicación/);
+  assert.equal(order.summary.address, "123 Main Street, Brampton ON");
+  assert.match(confirmedMessage(session), /123 Main Street/);
 });
 
 test("NO cancela sin completar el pedido", () => {
@@ -241,12 +246,33 @@ test("permite cambiar de pickup gratis a delivery", () => {
   let session = answer(completedPickupSession(), "cambiar entrega").session;
   session = answer(session, "4").session;
   session = answer(session, "2").session;
-  const result = answer(session, "2");
+  session = answer(session, "2").session;
+  const result = answer(
+    session,
+    "https://maps.app.goo.gl/AbCdEf123?g_st=aw",
+  );
 
   assert.equal(result.session.step, "UPDATE_CONFIRMATION");
   assert.equal(result.session.fulfillment.type, "DELIVERY");
   assert.equal(result.session.fulfillment.city, "MISSISSAUGA");
+  assert.equal(
+    result.session.deliveryAddress,
+    "https://maps.app.goo.gl/AbCdEf123?g_st=aw",
+  );
   assert.match(result.messages[0], /Delivery: \$8\.00/);
+});
+
+test("conserva exactamente una liga de Google Maps", () => {
+  const link = "https://maps.app.goo.gl/AbCdEf123?g_st=aw";
+  assert.deepEqual(parseDeliveryAddress(link), {
+    type: "MAPS_LINK",
+    value: link,
+  });
+  assert.deepEqual(parseDeliveryAddress("25 Main St, Brampton, ON"), {
+    type: "ADDRESS",
+    value: "25 Main St, Brampton, ON",
+  });
+  assert.equal(parseDeliveryAddress("1"), null);
 });
 
 test("cancelar un pedido confirmado requiere una segunda confirmacion", () => {

@@ -225,6 +225,7 @@ async function handleConversationMessage({
   store,
   config,
   conversationState,
+  input,
   logger = console,
 }) {
   let session = conversationState.get(message.from);
@@ -242,7 +243,7 @@ async function handleConversationMessage({
 
   const result = advanceConversation(
     session,
-    message.body,
+    input ?? message.body,
     config,
     new Date(),
   );
@@ -437,6 +438,34 @@ function createWhatsAppClient({ config, store, logger = console }) {
       }
 
       if (message.type === "location") {
+        const session = conversationState.get(message.from);
+        if (
+          session &&
+          ["ADDRESS", "UPDATE_ADDRESS"].includes(session.step)
+        ) {
+          const description =
+            message.location?.description ||
+            message.location?.address ||
+            message.location?.name ||
+            "";
+          const latitude = message.location?.latitude;
+          const longitude = message.location?.longitude;
+          const locationInput =
+            description ||
+            (latitude !== undefined && longitude !== undefined
+              ? `https://maps.google.com/?q=${latitude},${longitude}`
+              : "");
+          await handleConversationMessage({
+            message,
+            client,
+            store,
+            config,
+            conversationState,
+            input: locationInput,
+            logger,
+          });
+          return;
+        }
         await handleLocation({ message, store, config });
         return;
       }

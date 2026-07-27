@@ -190,12 +190,18 @@ through:
 4. Wednesday or Saturday.
 5. Free pickup or paid delivery.
 6. Brampton or Mississauga when delivery is selected.
-7. Final `SI` or `NO` confirmation.
+7. A written delivery address, Google Maps link, or WhatsApp location.
+8. Final `SI` or `NO` confirmation.
 
-Incomplete and canceled conversations are not written to Google Sheets. A
-confirmed delivery remains available for the customer to share their WhatsApp
-location. Conversation progress is stored in `.data/conversation-state.json`,
-which is excluded from Git.
+Incomplete conversations are not written to Google Sheets. Canceled confirmed
+orders remain only as inactive history. Delivery orders require an address
+before final confirmation. Conversation progress is stored in
+`.data/conversation-state.json`, which is excluded from Git.
+
+Delivery addresses are shown in the final confirmation and in the visible
+`Direccion` worksheet column. Google Maps links are stored without rewriting
+the URL. A native WhatsApp location uses its description when available or a
+Maps coordinates link otherwise.
 
 After confirmation, customers can write `ACTUALIZAR PEDIDO` or use natural
 words such as `agregar`, `quitar`, `cambiar`, or `cancelar`. The bot reminds

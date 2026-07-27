@@ -54,6 +54,34 @@ function cancelKeyword(value) {
   return /\b(CANCELAR|CANCELACION)\b/.test(normalizeAnswer(value));
 }
 
+function parseDeliveryAddress(value) {
+  const original = String(value || "").trim();
+  const url = original.match(/https?:\/\/[^\s]+/i)?.[0] || "";
+  if (
+    url &&
+    /(?:google\.[^/]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(
+      url,
+    )
+  ) {
+    return { type: "MAPS_LINK", value: url };
+  }
+  if (
+    original.length >= 8 &&
+    /[A-Za-zÀ-ÿ]/.test(original) &&
+    !/^\d+$/.test(original)
+  ) {
+    return { type: "ADDRESS", value: original };
+  }
+  return null;
+}
+
+function addressPrompt() {
+  return [
+    "📍 Comparte la dirección de entrega.",
+    "Puedes escribir la dirección completa o pegar una liga de Google Maps.",
+  ].join("\n");
+}
+
 function money(value) {
   return `$${Number(value || 0).toFixed(2)}`;
 }
@@ -202,6 +230,9 @@ function finalSummary(session, config) {
     `📦 Total piezas: ${pieces}`,
     `📅 Entrega: ${session.schedule.name} ${session.schedule.timeWindow}`,
     `🏪 Tipo: ${type}`,
+    ...(session.fulfillment.type === "DELIVERY"
+      ? [`📍 Dirección: ${session.deliveryAddress || "Por confirmar"}`]
+      : []),
     `💵 Subtotal: ${money(orderSubtotal)}`,
     `🚗 Delivery: ${money(deliveryFee)}`,
     `💰 TOTAL: ${money(orderSubtotal + deliveryFee)}`,
@@ -262,6 +293,8 @@ function updateBackup(session) {
     quantities: { ...session.quantities },
     schedule: { ...session.schedule },
     fulfillment: { ...session.fulfillment },
+    deliveryAddress: session.deliveryAddress || "",
+    addressType: session.addressType || "",
   };
 }
 
@@ -274,6 +307,8 @@ function restoreUpdate(session) {
     quantities: { ...backup.quantities },
     schedule: { ...backup.schedule },
     fulfillment: { ...backup.fulfillment },
+    deliveryAddress: backup.deliveryAddress,
+    addressType: backup.addressType,
   };
   delete restored.updateBackup;
   delete restored.updateAction;
@@ -300,7 +335,7 @@ function confirmedMessage(session) {
   ];
   if (session.fulfillment.type === "DELIVERY") {
     lines.push(
-      "📍 Comparte tu ubicación desde el clip de WhatsApp para coordinar la entrega.",
+      `📍 Dirección de entrega: ${session.deliveryAddress || "Por confirmar"}`,
       "",
     );
   }
@@ -352,6 +387,8 @@ function newSession({ chatId, customerName, customerPhone, now = new Date() }) {
     productIndex: 0,
     schedule: null,
     fulfillment: null,
+    deliveryAddress: "",
+    addressType: "",
     createdAt: now.toISOString(),
   };
 }
@@ -613,8 +650,10 @@ function advanceConversation(session, input, config, now = new Date()) {
         : config.deliveryFees.mississauga;
     const next = {
       ...session,
-      step: "CONFIRMATION",
+      step: "ADDRESS",
       fulfillment: { type: "DELIVERY", city, deliveryFee },
+      deliveryAddress: "",
+      addressType: "",
     };
     const cityName = city === "BRAMPTON" ? "Brampton" : "Mississauga";
     return {
@@ -623,8 +662,34 @@ function advanceConversation(session, input, config, now = new Date()) {
         [
           `✅ Delivery en ${cityName} seleccionado!`,
           "",
-          finalSummary(next, config),
+          addressPrompt(),
         ].join("\n"),
+      ],
+    };
+  }
+
+  if (session.step === "ADDRESS") {
+    const address = parseDeliveryAddress(input);
+    if (!address) {
+      return {
+        session,
+        messages: [
+          "Escribe una dirección completa o pega una liga válida de Google Maps.",
+        ],
+      };
+    }
+    const next = {
+      ...session,
+      step: "CONFIRMATION",
+      deliveryAddress: address.value,
+      addressType: address.type,
+    };
+    return {
+      session: next,
+      messages: [
+        ["✅ Dirección recibida!", "", finalSummary(next, config)].join(
+          "\n",
+        ),
       ],
     };
   }
@@ -800,6 +865,8 @@ function advanceConversation(session, input, config, now = new Date()) {
         ...session,
         step: "UPDATE_CONFIRMATION",
         fulfillment: { type: "PICKUP", city: "", deliveryFee: 0 },
+        deliveryAddress: "",
+        addressType: "",
       };
       return {
         session: next,
@@ -839,7 +906,7 @@ function advanceConversation(session, input, config, now = new Date()) {
     }
     const next = {
       ...session,
-      step: "UPDATE_CONFIRMATION",
+      step: "UPDATE_ADDRESS",
       fulfillment: {
         type: "DELIVERY",
         city,
@@ -848,6 +915,30 @@ function advanceConversation(session, input, config, now = new Date()) {
             ? config.deliveryFees.brampton
             : config.deliveryFees.mississauga,
       },
+      deliveryAddress: "",
+      addressType: "",
+    };
+    return {
+      session: next,
+      messages: [addressPrompt()],
+    };
+  }
+
+  if (session.step === "UPDATE_ADDRESS") {
+    const address = parseDeliveryAddress(input);
+    if (!address) {
+      return {
+        session,
+        messages: [
+          "Escribe una dirección completa o pega una liga válida de Google Maps.",
+        ],
+      };
+    }
+    const next = {
+      ...session,
+      step: "UPDATE_CONFIRMATION",
+      deliveryAddress: address.value,
+      addressType: address.type,
     };
     return {
       session: next,
@@ -962,6 +1053,10 @@ function buildTextOrder(session, confirmationMessage, config) {
   });
   normalized.summary.requestedDate = session.schedule.date;
   normalized.summary.timeWindow = session.schedule.timeWindow;
+  normalized.summary.address =
+    session.fulfillment.type === "DELIVERY"
+      ? session.deliveryAddress || ""
+      : "";
   normalized.summary.scheduleStatus = "CONFIRMADO";
   normalized.summary.status =
     session.fulfillment.type === "DELIVERY"
@@ -1007,6 +1102,7 @@ module.exports = {
   newSession,
   nextWeekdayDate,
   orderSummary,
+  parseDeliveryAddress,
   PRODUCTS,
   subtotal,
   totalPieces,

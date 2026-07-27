@@ -102,6 +102,7 @@ const KITCHEN_HEADERS = [
   "Cliente",
   "Telefono",
   "Entrega o recogida",
+  "Direccion",
   "Notas",
 ];
 const KITCHEN_MAX_COLUMNS = KITCHEN_HEADERS.length + 10;
@@ -199,6 +200,7 @@ function buildKitchenTable(orders, itemsByOrder) {
     "",
     "",
     "",
+    "",
     ...productNames.map((_, index) => {
       const column = columnName(KITCHEN_HEADERS.length + index + 1);
       return `=SUMIF($B$3:$B,"Confirmado",${column}$3:${column})`;
@@ -221,6 +223,7 @@ function buildKitchenTable(orders, itemsByOrder) {
       order.customerName,
       order.phone,
       fulfillmentLabel(order),
+      order.address || "",
       kitchenNotes(order),
       ...productNames.map((productName) => quantities.get(productName) || ""),
     ];
@@ -467,7 +470,7 @@ class GoogleSheetsOrderStore {
       },
     );
 
-    [190, 110, 150, 150, 125, 180, 300].forEach(
+    [190, 110, 150, 150, 125, 180, 300, 300].forEach(
       (pixelSize, columnIndex) => {
         requests.push({
           updateDimensionProperties: {

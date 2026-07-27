@@ -19,6 +19,7 @@ test("crea una fila por pedido y una columna por producto", () => {
     requestedDate: "",
     timeWindow: "",
     customerNotes: "",
+    address: "123 Main Street",
     orderId: "WA-123",
   };
   const table = buildKitchenTable(
@@ -44,19 +45,20 @@ test("crea una fila por pedido y una columna por producto", () => {
     "Concha de vainilla",
   ]);
   assert.equal(table.orderRows.length, 1);
-  assert.deepEqual(table.orderRows[0].slice(0, 7), [
+  assert.deepEqual(table.orderRows[0].slice(0, 8), [
     "WA-123",
     "Confirmado",
     "24/07/26, 12:00 p.m.",
     "Ana",
     "19055550123",
     "Entrega en Brampton",
+    "123 Main Street",
     "",
   ]);
-  assert.deepEqual(table.orderRows[0].slice(7), [4, 2]);
-  assert.deepEqual(table.totalRow.slice(7), [
-    '=SUMIF($B$3:$B,"Confirmado",H$3:H)',
+  assert.deepEqual(table.orderRows[0].slice(8), [4, 2]);
+  assert.deepEqual(table.totalRow.slice(8), [
     '=SUMIF($B$3:$B,"Confirmado",I$3:I)',
+    '=SUMIF($B$3:$B,"Confirmado",J$3:J)',
   ]);
 });
 
@@ -79,7 +81,7 @@ test("suma productos repetidos dentro del mismo pedido", () => {
     ]),
   );
   assert.deepEqual(table.productNames, ["Bolillo"]);
-  assert.equal(table.orderRows[0][7], 5);
+  assert.equal(table.orderRows[0][8], 5);
 });
 
 test("acomoda hasta diez productos en una sola fila", () => {
@@ -92,11 +94,11 @@ test("acomoda hasta diez productos en una sola fila", () => {
     new Map([["WA-10", items]]),
   );
 
-  assert.equal(table.headers.length, 17);
-  assert.equal(table.orderRows[0].length, 17);
+  assert.equal(table.headers.length, 18);
+  assert.equal(table.orderRows[0].length, 18);
   assert.equal(
-    table.totalRow[16],
-    '=SUMIF($B$3:$B,"Confirmado",Q$3:Q)',
+    table.totalRow[17],
+    '=SUMIF($B$3:$B,"Confirmado",R$3:R)',
   );
 });
 
