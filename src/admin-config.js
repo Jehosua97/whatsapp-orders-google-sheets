@@ -5,6 +5,15 @@ const path = require("node:path");
 
 const MAX_PRODUCTS = 10;
 const SERVICE_TYPES = ["PICKUP", "DELIVERY"];
+const WEEKDAY_NAMES = [
+  "Domingo",
+  "Lunes",
+  "Martes",
+  "Miércoles",
+  "Jueves",
+  "Viernes",
+  "Sábado",
+];
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -116,6 +125,49 @@ function normalizeCatalog(catalog) {
   return normalized;
 }
 
+function repairCatalogEncoding(catalog, defaults) {
+  const defaultsById = new Map(
+    defaults.map((product) => [product.id, product]),
+  );
+  return catalog.map((product) => {
+    const fallback = defaultsById.get(product.id);
+    if (!fallback) return product;
+    const invalidEmoji =
+      !product.emoji ||
+      /^[?]+$/.test(String(product.emoji)) ||
+      String(product.emoji).includes("�");
+    const repairText = (value, key) =>
+      String(value || "").includes("�") ? fallback[key] : value;
+    return {
+      ...product,
+      emoji: invalidEmoji ? fallback.emoji : product.emoji,
+      name: repairText(product.name, "name"),
+      promptName: repairText(product.promptName, "promptName"),
+      sheetName: repairText(product.sheetName, "sheetName"),
+    };
+  });
+}
+
+function repairScheduleEncoding(schedules, defaults) {
+  const defaultsById = new Map(
+    defaults.map((schedule) => [schedule.id, schedule]),
+  );
+  return schedules.map((schedule) => {
+    const fallback = defaultsById.get(schedule.id);
+    if (!fallback) return schedule;
+    const repairText = (value, key) =>
+      String(value || "").includes("�") ? fallback[key] : value;
+    return {
+      ...schedule,
+      pickupWindow: repairText(schedule.pickupWindow, "pickupWindow"),
+      deliveryWindow: repairText(
+        schedule.deliveryWindow,
+        "deliveryWindow",
+      ),
+    };
+  });
+}
+
 function normalizeSchedules(schedules) {
   if (!Array.isArray(schedules) || !schedules.length) {
     throw new Error("Debe existir por lo menos un día de servicio.");
@@ -124,12 +176,11 @@ function normalizeSchedules(schedules) {
   const usedIds = new Set();
   const usedWeekdays = new Set();
   return schedules.map((item, index) => {
-    const name = String(item.name || "").trim();
     const weekday = Number(item.weekday);
-    if (!name) throw new Error(`Falta el nombre del horario ${index + 1}.`);
     if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
-      throw new Error(`El día de ${name} no es válido.`);
+      throw new Error(`El día del horario ${index + 1} no es válido.`);
     }
+    const name = WEEKDAY_NAMES[weekday];
     if (usedWeekdays.has(weekday)) {
       throw new Error(`Ya existe otro horario para ${name}.`);
     }
@@ -227,16 +278,22 @@ class AdminConfigStore {
     this.file = file;
     this.baseConfig = baseConfig;
     this.state = this.load();
+    this.persist(this.state);
   }
 
   load() {
     try {
       const parsed = JSON.parse(fs.readFileSync(this.file, "utf8"));
+      const defaults = defaultState(this.baseConfig);
       return {
-        ...defaultState(this.baseConfig),
+        ...defaults,
         ...parsed,
-        catalog: normalizeCatalog(parsed.catalog),
-        schedules: normalizeSchedules(parsed.schedules),
+        catalog: normalizeCatalog(
+          repairCatalogEncoding(parsed.catalog, defaults.catalog),
+        ),
+        schedules: normalizeSchedules(
+          repairScheduleEncoding(parsed.schedules, defaults.schedules),
+        ),
         closures: Array.isArray(parsed.closures) ? parsed.closures : [],
         notifications: Array.isArray(parsed.notifications)
           ? parsed.notifications
@@ -346,6 +403,7 @@ module.exports = {
   AdminConfigStore,
   MAX_PRODUCTS,
   SERVICE_TYPES,
+  WEEKDAY_NAMES,
   addDays,
   dateWeekday,
   defaultState,
@@ -353,6 +411,8 @@ module.exports = {
   nextAvailableSchedule,
   normalizeCatalog,
   normalizeSchedules,
+  repairCatalogEncoding,
+  repairScheduleEncoding,
   scheduleForDate,
   serviceEnabled,
   serviceWindow,

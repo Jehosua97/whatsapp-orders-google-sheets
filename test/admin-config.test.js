@@ -46,6 +46,56 @@ test("el catalogo administrativo alimenta la configuracion del bot", () => {
   );
 });
 
+test("repara emojis y nombres de dias dañados por codificacion", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lacenaduria-"));
+  const file = path.join(directory, "admin.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      catalog: [
+        {
+          id: "chocolate",
+          name: "Conchitas Chocolate",
+          sheetName: "Concha de chocolate",
+          emoji: "??",
+          price: 3.5,
+          active: true,
+        },
+      ],
+      schedules: [
+        {
+          id: "wednesday",
+          name: "Mi�rcoles",
+          weekday: 3,
+          active: true,
+          pickupEnabled: true,
+          pickupWindow: "5:00 p.m.",
+          deliveryEnabled: true,
+          deliveryWindow: "despu�s de las 3:00 p.m.",
+        },
+      ],
+      closures: [],
+      notifications: [],
+    }),
+  );
+
+  const store = new AdminConfigStore(file, baseConfig);
+
+  assert.equal(store.getState().catalog[0].emoji, "🍫");
+  assert.equal(store.getState().schedules[0].name, "Miércoles");
+  assert.equal(
+    store.getState().schedules[0].deliveryWindow,
+    "después de las 3:00 PM",
+  );
+  const persisted = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.equal(persisted.catalog[0].emoji, "🍫");
+  assert.equal(persisted.schedules[0].name, "Miércoles");
+  assert.equal(
+    persisted.schedules[0].deliveryWindow,
+    "después de las 3:00 PM",
+  );
+});
+
 test("no permite dejar el menu sin productos disponibles", () => {
   assert.throws(
     () =>

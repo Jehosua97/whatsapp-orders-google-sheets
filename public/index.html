@@ -39,7 +39,7 @@
         </button>
         <button class="nav-item" data-view="rescheduling">
           <i data-lucide="calendar-sync"></i>
-          <span>Reprogramaciones</span>
+          <span>Días no disponibles</span>
           <span class="nav-count" id="closureNavCount">0</span>
         </button>
       </nav>
@@ -103,12 +103,12 @@
         <section class="view" id="reschedulingView">
           <div class="view-header">
             <div>
-              <p class="eyebrow">Próximas fechas</p>
-              <h1>Reprogramaciones</h1>
+              <p class="eyebrow">Excepciones del calendario</p>
+              <h1>Días no disponibles</h1>
             </div>
             <button class="button danger-outline" id="newClosureButton">
               <i data-lucide="calendar-x"></i>
-              Cerrar una fecha
+              Suspender servicio en una fecha
             </button>
           </div>
 
@@ -120,7 +120,7 @@
           <div class="date-grid" id="upcomingDates"></div>
 
           <div class="section-heading with-action">
-            <h2>Cierres activos</h2>
+            <h2>Suspensiones programadas</h2>
             <span id="closureCountLabel"></span>
           </div>
           <div class="closure-list" id="closureRows"></div>
@@ -145,8 +145,8 @@
       <form method="dialog" id="closureForm">
         <div class="dialog-header">
           <div>
-            <p class="eyebrow">Excepción de servicio</p>
-            <h2>Cerrar fecha</h2>
+            <p class="eyebrow">Cambio excepcional</p>
+            <h2>Suspender servicio</h2>
           </div>
           <button class="icon-button" value="cancel" title="Cerrar">
             <i data-lucide="x"></i>
@@ -157,7 +157,7 @@
           <input type="date" id="closureDate" required />
         </label>
         <fieldset>
-          <legend>Servicios no disponibles</legend>
+          <legend>Servicios que no estarán disponibles</legend>
           <label class="check-line">
             <input type="checkbox" id="closePickup" checked />
             <span>Pickup</span>
@@ -180,7 +180,7 @@
           <button class="button secondary" value="cancel">Cancelar</button>
           <button class="button danger" id="confirmClosureButton" value="default">
             <i data-lucide="calendar-x"></i>
-            Cerrar fecha
+            Guardar suspensión
           </button>
         </div>
       </form>

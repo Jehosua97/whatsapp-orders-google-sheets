@@ -508,9 +508,7 @@ select:focus {
 }
 
 .schedule-identity {
-  display: grid;
-  grid-template-columns: 1fr 130px;
-  gap: 8px;
+  display: block;
 }
 
 .service-editor {

@@ -144,7 +144,6 @@ function renderSchedules() {
       (schedule, index) => `
         <div class="schedule-row" data-index="${index}">
           <div class="schedule-identity">
-            <input data-field="name" value="${escapeHtml(schedule.name)}" aria-label="Nombre del día">
             <select data-field="weekday" aria-label="Día de la semana">
               ${weekdays
                 .map(
@@ -188,10 +187,13 @@ function schedulesFromForm() {
     (row) => {
       const existing =
         state.dashboard.schedules[Number(row.dataset.index)] || {};
+      const weekday = Number(
+        row.querySelector('[data-field="weekday"]').value,
+      );
       return {
         id: existing.id,
-        name: row.querySelector('[data-field="name"]').value,
-        weekday: Number(row.querySelector('[data-field="weekday"]').value),
+        name: weekdays[weekday],
+        weekday,
         active: true,
         pickupEnabled: row.querySelector(
           '[data-field="pickupEnabled"]',
@@ -221,7 +223,7 @@ function renderRescheduling() {
   ).length;
   document.querySelector("#rescheduleMetrics").innerHTML = [
     ["Fechas disponibles", availableDates],
-    ["Cierres activos", dashboard.closures.length],
+    ["Suspensiones", dashboard.closures.length],
     ["Pedidos por atender", affectedTotal],
   ]
     .map(
@@ -261,7 +263,7 @@ function renderRescheduling() {
           </div>
           <button class="button small ${closed ? "secondary" : "danger-outline"} close-date" data-date="${date.date}">
             <i data-lucide="calendar-x"></i>
-            ${closed ? "Editar cierre" : "Cerrar fecha"}
+            ${closed ? "Editar suspensión" : "Suspender servicio"}
           </button>
         </article>`;
     })
@@ -303,7 +305,7 @@ function renderRescheduling() {
             </div>`,
         )
         .join("")
-    : '<div class="empty-state">No hay cierres activos.</div>';
+    : '<div class="empty-state">No hay suspensiones programadas.</div>';
   icons();
 }
 
@@ -521,7 +523,7 @@ elements.closureForm.addEventListener("submit", async (event) => {
     elements.closureDialog.close();
     await loadDashboard();
     showToast(
-      `Fecha cerrada. ${result.affected.length} pedidos requieren revisión.`,
+      `Disponibilidad actualizada. ${result.affected.length} pedidos requieren revisión.`,
     );
     await renderAffected(result.closure.id);
   } catch (error) {
@@ -543,14 +545,20 @@ elements.closureRows.addEventListener("click", async (event) => {
   }
   const removeButton = event.target.closest(".remove-closure");
   if (!removeButton) return;
-  if (!window.confirm("¿Reabrir esta fecha?")) return;
+  if (
+    !window.confirm(
+      "¿Volver a habilitar pickup y delivery en esta fecha?",
+    )
+  ) {
+    return;
+  }
   try {
     await api(`/api/closures/${removeButton.dataset.id}`, {
       method: "DELETE",
     });
     elements.affectedSection.hidden = true;
     await loadDashboard();
-    showToast("La fecha volvió a estar disponible.");
+    showToast("Los servicios de esta fecha volvieron a estar disponibles.");
   } catch (error) {
     showToast(error.message, true);
   }
