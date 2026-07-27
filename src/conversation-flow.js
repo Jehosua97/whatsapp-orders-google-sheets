@@ -947,6 +947,22 @@ function advanceConversation(session, input, config, now = new Date()) {
   }
 
   if (session.step === "UPDATE_CONFIRMATION") {
+    if (
+      session.fulfillment?.type === "DELIVERY" &&
+      !session.deliveryAddress
+    ) {
+      const next = { ...session, step: "UPDATE_ADDRESS" };
+      return {
+        session: next,
+        messages: [
+          [
+            "Antes de actualizar el pedido necesitamos la dirección de entrega.",
+            "",
+            addressPrompt(),
+          ].join("\n"),
+        ],
+      };
+    }
     if (answer === "SI") {
       return {
         session: finishUpdate(session),
@@ -989,6 +1005,22 @@ function advanceConversation(session, input, config, now = new Date()) {
   }
 
   if (session.step === "CONFIRMATION") {
+    if (
+      session.fulfillment?.type === "DELIVERY" &&
+      !session.deliveryAddress
+    ) {
+      const next = { ...session, step: "ADDRESS" };
+      return {
+        session: next,
+        messages: [
+          [
+            "Antes de confirmar necesitamos la dirección de entrega.",
+            "",
+            addressPrompt(),
+          ].join("\n"),
+        ],
+      };
+    }
     if (answer === "SI") {
       return {
         session: { ...session, step: "COMPLETED" },

@@ -185,6 +185,29 @@ test("calcula delivery en Brampton y solicita la direccion antes de confirmar", 
   assert.match(confirmedMessage(session), /123 Main Street/);
 });
 
+test("un delivery anterior no puede confirmarse sin direccion", () => {
+  let session = newSession({
+    chatId: "test@c.us",
+    customerName: "Ana",
+    customerPhone: "19055550123",
+    now: monday,
+  });
+  for (const input of ["1", "5", "0", "0", "1", "2", "1"]) {
+    session = answer(session, input).session;
+  }
+
+  const legacySession = {
+    ...session,
+    step: "CONFIRMATION",
+    deliveryAddress: "",
+  };
+  const result = answer(legacySession, "SI");
+
+  assert.equal(result.completed, undefined);
+  assert.equal(result.session.step, "ADDRESS");
+  assert.match(result.messages[0], /necesitamos la dirección/i);
+});
+
 test("NO cancela sin completar el pedido", () => {
   const session = {
     ...newSession({
