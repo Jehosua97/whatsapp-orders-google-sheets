@@ -56,6 +56,12 @@ function readConfig() {
         .map((value) => value.trim())
         .filter(Boolean),
     ),
+    automationAllowedPhones: new Set(
+      (process.env.WHATSAPP_AUTOMATION_ALLOWED_PHONES || "")
+        .split(",")
+        .map((value) => value.replace(/\D/g, ""))
+        .filter(Boolean),
+    ),
     autoReplyCooldownHours: number("AUTO_REPLY_COOLDOWN_HOURS", 24),
     autoReplyStateFile: path.resolve(
       process.env.AUTO_REPLY_STATE_FILE || ".data/auto-reply-state.json",

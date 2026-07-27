@@ -10,6 +10,7 @@ const {
 const {
   handleConversationMessage,
   handleLocation,
+  isAllowedMessage,
   locationReceivedReply,
   phoneFromWhatsAppId,
   pickupReply,
@@ -57,6 +58,49 @@ test("deja el telefono vacio si WhatsApp no revela el mapeo del LID", async () =
     { number: "999888777666555" },
   );
   assert.equal(phone, "");
+});
+
+test("autoriza solamente telefonos configurados aunque WhatsApp use LID", async () => {
+  const allowedPhones = new Set(["15550001111"]);
+  const client = {
+    getContactLidAndPhone: async ([chatId]) => [
+      {
+        lid: chatId,
+        pn:
+          chatId === "allowed@lid"
+            ? "15550001111@c.us"
+            : "15559999999@c.us",
+      },
+    ],
+  };
+
+  assert.equal(
+    await isAllowedMessage({
+      client,
+      chatId: "15550001111@c.us",
+      allowedChatIds: new Set(),
+      allowedPhones,
+    }),
+    true,
+  );
+  assert.equal(
+    await isAllowedMessage({
+      client,
+      chatId: "allowed@lid",
+      allowedChatIds: new Set(),
+      allowedPhones,
+    }),
+    true,
+  );
+  assert.equal(
+    await isAllowedMessage({
+      client,
+      chatId: "other@lid",
+      allowedChatIds: new Set(),
+      allowedPhones,
+    }),
+    false,
+  );
 });
 
 test("la respuesta de ubicacion no pide confirmar la ciudad", () => {

@@ -69,6 +69,23 @@ async function resolvePhoneNumber(client, chatId, contact) {
   );
 }
 
+async function isAllowedMessage({
+  client,
+  chatId,
+  allowedChatIds,
+  allowedPhones,
+}) {
+  if (isAllowedChat(chatId, allowedChatIds)) return true;
+
+  const phones = allowedPhones instanceof Set ? allowedPhones : new Set();
+  const directPhone = phoneFromWhatsAppId(chatId);
+  if (directPhone && phones.has(directPhone)) return true;
+  if (!String(chatId).endsWith("@lid")) return false;
+
+  const resolvedPhone = await resolvePhoneNumber(client, chatId);
+  return Boolean(resolvedPhone && phones.has(resolvedPhone));
+}
+
 async function customerIdentity(message, client) {
   let contact;
   try {
@@ -281,6 +298,7 @@ async function handleConversationMessage({
 function createWhatsAppClient({ config, store, logger = console }) {
   const qrFile = path.resolve("whatsapp-qr.png");
   const messageQueues = new Map();
+  const authorizedChatIds = new Set(config.automationAllowedChatIds);
   const conversationState = new ConversationStateStore(
     config.conversationStateFile,
   );
@@ -345,10 +363,17 @@ function createWhatsAppClient({ config, store, logger = console }) {
 
   const processMessage = async (message) => {
     try {
-      if (!isAllowedChat(message.from, config.automationAllowedChatIds)) {
+      const allowed = await isAllowedMessage({
+        client,
+        chatId: message.from,
+        allowedChatIds: authorizedChatIds,
+        allowedPhones: config.automationAllowedPhones,
+      });
+      if (!allowed) {
         logger.log(`Mensaje ignorado por lista permitida: ${message.from}`);
         return;
       }
+      authorizedChatIds.add(message.from);
 
       if (message.type === "order") {
         logger.log(`Carrito recibido: ${message.orderId || "sin ID"}`);
@@ -460,6 +485,7 @@ module.exports = {
   handleConversationMessage,
   handleFulfillmentText,
   handleLocation,
+  isAllowedMessage,
   loadOrderWithRetry,
   locationReceivedReply,
   phoneFromWhatsAppId,

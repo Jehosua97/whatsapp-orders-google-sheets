@@ -139,6 +139,7 @@ BRAMPTON_DELIVERY_FEE=5
 MISSISSAUGA_DELIVERY_FEE=8
 PICKUP_TIME_WINDOW=5:00 p.m. a 6:00 p.m.
 WHATSAPP_AUTOMATION_ALLOWLIST=
+WHATSAPP_AUTOMATION_ALLOWED_PHONES=
 AUTO_REPLY_COOLDOWN_HOURS=24
 AUTO_REPLY_STATE_FILE=.data/auto-reply-state.json
 CONVERSATION_STATE_FILE=.data/conversation-state.json
@@ -170,6 +171,13 @@ WHATSAPP_AUTOMATION_ALLOWLIST=123456789@lid
 
 Messages and carts from every other chat are ignored. Multiple test IDs can be
 separated by commas.
+
+Approved phone numbers can also be listed without symbols. The bot resolves
+WhatsApp LIDs before authorizing them:
+
+```dotenv
+WHATSAPP_AUTOMATION_ALLOWED_PHONES=14165550123,16475550123
+```
 
 ### Conversational order flow
 
