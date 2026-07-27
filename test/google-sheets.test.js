@@ -168,6 +168,43 @@ test("guarda en la hoja interna un status editado por cocina", async () => {
   assert.deepEqual(batchRequest.requestBody.data[0].values, [["Entregado"]]);
 });
 
+test("una cancelacion del bot no se revierte con el status visible anterior", async () => {
+  let writtenRow;
+  let refreshOptions;
+  const store = new GoogleSheetsOrderStore({
+    spreadsheetId: "test",
+    ordersSheet: "Pedidos",
+  });
+  store.sheets = {
+    spreadsheets: {
+      values: {
+        update: async (request) => {
+          writtenRow = request.requestBody.values[0];
+        },
+      },
+    },
+  };
+  store.getOrder = async () => ({
+    orderId: "WA-123",
+    status: "CONFIRMADO",
+    kitchenStatus: "Confirmado",
+    sheetRow: 3,
+  });
+  store.refreshKitchenViewUnlocked = async (options) => {
+    refreshOptions = options;
+  };
+
+  const updated = await store.updateOrder("WA-123", {
+    status: "CANCELADO",
+    kitchenStatus: "Cancelado",
+  });
+
+  assert.equal(updated.status, "CANCELADO");
+  assert.equal(updated.kitchenStatus, "Cancelado");
+  assert.equal(writtenRow[25], "Cancelado");
+  assert.deepEqual(refreshOptions, { syncStatuses: false });
+});
+
 test("reemplaza productos conservando el mismo ID de pedido", async () => {
   let clearedRanges;
   let updateRequest;

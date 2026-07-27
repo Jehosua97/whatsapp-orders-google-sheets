@@ -660,7 +660,7 @@ class GoogleSheetsOrderStore {
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [summaryRow(updated)] },
       });
-      await this.refreshKitchenViewUnlocked();
+      await this.refreshKitchenViewUnlocked({ syncStatuses: false });
       return updated;
     });
   }
