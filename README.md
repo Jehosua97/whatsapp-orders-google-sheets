@@ -207,6 +207,18 @@ orders remain only as inactive history. Delivery orders require an address
 before final confirmation. Conversation progress is stored in
 `.data/conversation-state.json`, which is excluded from Git.
 
+WhatsApp catalog carts use the same confirmation rules. After receiving a
+cart, the bot:
+
+1. Shows the detected products and quantities.
+2. Asks whether the customer wants free pickup or delivery.
+3. Requests the city and address only for delivery.
+4. Offers the currently available schedule for that service.
+5. Shows the final total and requires `SI`.
+
+The cart is not added to Google Sheets or production totals until that final
+confirmation. Native WhatsApp locations and Google Maps links are supported.
+
 Delivery addresses are shown in the final confirmation and in the visible
 `Direccion` worksheet column. Google Maps links are stored without rewriting
 the URL. A native WhatsApp location uses its description when available or a
@@ -250,16 +262,18 @@ default host is loopback-only; set `ADMIN_PASSWORD` before changing
 
 ### Catalog fulfillment items
 
-Add exactly one fulfillment item to each cart:
+Customers may send a cart containing only food products. The bot always asks
+whether they want pickup or delivery after receiving it, so catalog logistics
+items are no longer required.
+
+For backward compatibility, existing items such as:
 
 - `Delivery in Mississauga`
 - `Delivery in Brampton`
 - `Recoger`
 
-The service recognizes these items as logistics, excludes them from kitchen
-quantities, applies the configured fee once, and asks only for the missing
-address or schedule information. Conflicting selections are flagged for manual
-review.
+are still recognized and excluded from kitchen quantities. The customer's
+answer in the follow-up flow determines the final service and fee.
 
 `PICKUP_TIME_WINDOW` controls the pickup window included in the automatic
 customer reply and in the kitchen worksheet notes.

@@ -14,6 +14,13 @@ const {
   updatedMessage,
 } = require("./conversation-flow");
 const {
+  advanceCartConversation,
+  cartConfirmedMessage,
+  cartFinalSummary,
+  cartReceivedMessage,
+  createCartSession,
+} = require("./cart-flow");
+const {
   deliveryFeeFor,
   detectCity,
   detectPostalCode,
@@ -229,6 +236,16 @@ async function handleConversationMessage({
   logger = console,
 }) {
   let session = conversationState.get(message.from);
+  if (session?.source === "CART") {
+    return handleCartConversationMessage({
+      message,
+      store,
+      config,
+      conversationState,
+      input,
+      logger,
+    });
+  }
   if (!session) {
     const customer = await customerIdentity(message, client);
     session = newSession({
@@ -291,6 +308,86 @@ async function handleConversationMessage({
   }
 
   conversationState.set(message.from, result.session);
+  for (const reply of result.messages) {
+    await message.reply(reply);
+  }
+  return true;
+}
+
+async function handleCartConversationMessage({
+  message,
+  store,
+  config,
+  conversationState,
+  input,
+  logger = console,
+}) {
+  const session = conversationState.get(message.from);
+  if (!session || session.source !== "CART") return false;
+
+  const result = advanceCartConversation(
+    session,
+    input ?? message.body,
+    config,
+    new Date(),
+  );
+
+  if (result.startTextOrder) {
+    conversationState.set(message.from, result.session);
+    await message.reply(menuMessage(result.session.customerName, config));
+    return true;
+  }
+
+  if (result.orderCanceled) {
+    await store.updateOrder(session.orderId, {
+      status: "CANCELADO",
+      kitchenStatus: "Cancelado",
+      customerNotes: "Pedido cancelado por el cliente en WhatsApp",
+    });
+    conversationState.set(message.from, result.session);
+    logger.log(`Pedido de carrito cancelado: ${session.orderId}`);
+    await message.reply(
+      [
+        "❌ Tu pedido fue cancelado.",
+        "Ya no se incluirá en las cantidades por preparar.",
+        "",
+        "Escribe NUEVO PEDIDO cuando quieras iniciar otro.",
+      ].join("\n"),
+    );
+    return true;
+  }
+
+  if (result.updated) {
+    await store.replaceOrder(result.session.cartOrder);
+    conversationState.set(message.from, result.session);
+    logger.log(`Pedido de carrito actualizado: ${session.orderId}`);
+    await message.reply(
+      [
+        "✅ Tu pedido fue actualizado.",
+        "",
+        cartFinalSummary(result.session),
+      ].join("\n"),
+    );
+    return true;
+  }
+
+  if (result.completed) {
+    const saved = await store.saveOrder(result.session.cartOrder);
+    conversationState.set(message.from, result.session);
+    if (saved.inserted) {
+      logger.log(`Pedido de carrito guardado: ${session.orderId}`);
+    } else {
+      logger.log(`Pedido de carrito duplicado omitido: ${session.orderId}`);
+    }
+    await message.reply(cartConfirmedMessage(result.session));
+    return true;
+  }
+
+  if (result.session) {
+    conversationState.set(message.from, result.session);
+  } else {
+    conversationState.set(message.from, null);
+  }
   for (const reply of result.messages) {
     await message.reply(reply);
   }
@@ -404,51 +501,12 @@ function createWhatsAppClient({
           deliveryFees: runtimeConfig.deliveryFees,
           pickupTimeWindow: runtimeConfig.pickupTimeWindow,
         });
-        const result = await store.saveOrder(normalized);
-
-        if (!result.inserted) {
-          logger.log(`Pedido duplicado omitido: ${normalized.summary.orderId}`);
-          return;
-        }
-
+        const session = createCartSession(normalized);
+        conversationState.set(message.from, session);
         logger.log(
-          `Pedido guardado en Google Sheets: ${normalized.summary.orderId}`,
+          `Carrito pendiente de modalidad: ${normalized.summary.orderId}`,
         );
-        if (runtimeConfig.sendCustomerConfirmation) {
-          const productLines = normalized.items
-            .filter((item) => !item.isLogistics)
-            .map((item) => `- ${item.quantity} x ${item.productName}`);
-          const lines = [
-            "Gracias, ya recibimos tu carrito.",
-            "",
-            "Tu pedido:",
-            ...(productLines.length
-              ? productLines
-              : ["- No encontramos productos para preparar"]),
-            "",
-          ];
-          if (normalized.summary.fulfillmentConflict) {
-            lines.push(
-              "Vemos mas de una opcion de entrega o recogida. Dinos cual deseas conservar y te ayudaremos a corregirla.",
-            );
-          } else if (normalized.summary.fulfillmentType === "PICKUP") {
-            lines.push(pickupReply(runtimeConfig.pickupTimeWindow));
-          } else if (normalized.summary.fulfillmentType === "DELIVERY") {
-            const city =
-              normalized.summary.city === "BRAMPTON"
-                ? "Brampton"
-                : "Mississauga";
-            lines.push(
-              `Registramos entrega en ${city} por ${formatMoney(normalized.summary.deliveryFee, normalized.summary.currency)}.`,
-              "Comparte tu ubicacion desde el clip de WhatsApp y te confirmaremos la fecha y el horario.",
-            );
-          } else {
-            lines.push(
-              "No encontramos una opcion de entrega o recogida en el carrito. Dinos si prefieres recoger o si necesitas entrega en Brampton o Mississauga.",
-            );
-          }
-          await message.reply(lines.join("\n"));
-        }
+        await message.reply(cartReceivedMessage(session, runtimeConfig));
         return;
       }
 
@@ -456,7 +514,9 @@ function createWhatsAppClient({
         const session = conversationState.get(message.from);
         if (
           session &&
-          ["ADDRESS", "UPDATE_ADDRESS"].includes(session.step)
+          ["ADDRESS", "UPDATE_ADDRESS", "CART_ADDRESS"].includes(
+            session.step,
+          )
         ) {
           const description =
             message.location?.description ||
@@ -531,6 +591,7 @@ module.exports = {
   createWhatsAppClient,
   customerIdentity,
   handleConversationMessage,
+  handleCartConversationMessage,
   handleFulfillmentText,
   handleLocation,
   isAllowedMessage,
