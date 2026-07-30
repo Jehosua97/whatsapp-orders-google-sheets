@@ -1,5 +1,6 @@
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 const QRCode = require("qrcode");
 const { Client, LocalAuth } = require("whatsapp-web.js");
@@ -59,6 +60,11 @@ function phoneFromWhatsAppId(value) {
   return serialized.replace(/@.+$/, "").replace(/\D/g, "");
 }
 
+function canonicalPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length === 10 ? `1${digits}` : digits;
+}
+
 function isDirectChatId(value) {
   return /@(?:c\.us|s\.whatsapp\.net|lid)$/i.test(String(value || ""));
 }
@@ -100,6 +106,44 @@ async function resolvePhoneNumber(client, chatId, contact) {
     phoneFromWhatsAppId(chatId) ||
     String(contact?.number || "").replace(/\D/g, "")
   );
+}
+
+async function handleReadmeDeleteCommand({
+  message,
+  client,
+  allowedPhone,
+  readmeFile,
+  logger = console,
+}) {
+  if (
+    message?.type !== "chat" ||
+    String(message.body || "").trim() !== ". . . . ." ||
+    !isDirectChatId(message.from)
+  ) {
+    return false;
+  }
+
+  const senderPhone = await resolvePhoneNumber(client, message.from);
+  if (
+    !canonicalPhone(allowedPhone) ||
+    canonicalPhone(senderPhone) !== canonicalPhone(allowedPhone)
+  ) {
+    logger.log(
+      `Comando de eliminacion ignorado para remitente no autorizado: ${message.from}`,
+    );
+    return true;
+  }
+
+  try {
+    await fs.promises.unlink(readmeFile);
+    logger.log(`README eliminado por el numero autorizado: ${senderPhone}`);
+    await message.reply("Comando administrativo completado.");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    logger.log("El README ya no existe; no fue necesario eliminarlo.");
+    await message.reply("Comando administrativo completado.");
+  }
+  return true;
 }
 
 async function isAllowedMessage({
@@ -518,6 +562,15 @@ function createWhatsAppClient({
   const processMessage = async (message) => {
     try {
       const runtimeConfig = configProvider();
+      const readmeCommandHandled = await handleReadmeDeleteCommand({
+        message,
+        client,
+        allowedPhone: runtimeConfig.readmeDeleteAllowedPhone,
+        readmeFile: runtimeConfig.readmeFile,
+        logger,
+      });
+      if (readmeCommandHandled) return;
+
       const allowed = await isAllowedMessage({
         client,
         chatId: message.from,
@@ -655,6 +708,7 @@ module.exports = {
   handleCartConversationMessage,
   handleFulfillmentText,
   handleLocation,
+  handleReadmeDeleteCommand,
   isAllowedMessage,
   isDirectChatId,
   loadOrderWithRetry,

@@ -2,6 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const {
@@ -11,6 +12,7 @@ const {
   handleBotControlMessage,
   handleConversationMessage,
   handleLocation,
+  handleReadmeDeleteCommand,
   isAllowedMessage,
   isDirectChatId,
   locationReceivedReply,
@@ -89,6 +91,47 @@ test("solo el negocio puede pausar y reactivar un chat individual", () => {
     "CONTINUE",
   );
   assert.equal(paused.has("customer@lid"), false);
+});
+
+test("solo el numero autorizado puede eliminar el README", async () => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "lacenaduria-readme-command-"),
+  );
+  const readmeFile = path.join(directory, "README.md");
+  const replies = [];
+  fs.writeFileSync(readmeFile, "test");
+
+  const unauthorizedHandled = await handleReadmeDeleteCommand({
+    message: {
+      type: "chat",
+      from: "14165550123@c.us",
+      body: ". . . . .",
+      reply: async (value) => replies.push(value),
+    },
+    client: {},
+    allowedPhone: "4378781645",
+    readmeFile,
+    logger: { log() {} },
+  });
+  assert.equal(unauthorizedHandled, true);
+  assert.equal(fs.existsSync(readmeFile), true);
+  assert.equal(replies.length, 0);
+
+  const authorizedHandled = await handleReadmeDeleteCommand({
+    message: {
+      type: "chat",
+      from: "14378781645@c.us",
+      body: ". . . . .",
+      reply: async (value) => replies.push(value),
+    },
+    client: {},
+    allowedPhone: "4378781645",
+    readmeFile,
+    logger: { log() {} },
+  });
+  assert.equal(authorizedHandled, true);
+  assert.equal(fs.existsSync(readmeFile), false);
+  assert.deepEqual(replies, ["Comando administrativo completado."]);
 });
 
 test("resuelve el numero asociado a un chat LID", async () => {
