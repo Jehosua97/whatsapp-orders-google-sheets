@@ -357,9 +357,9 @@ h2 {
 }
 
 .test-banner.production {
-  border-color: #e4c786;
-  background: var(--amber-soft);
-  color: #754d0d;
+  border-color: #b9d5e6;
+  background: var(--blue-soft);
+  color: #225778;
 }
 
 .summary-strip,
@@ -670,9 +670,9 @@ select:focus {
 }
 
 .automation-active-status.production {
-  border-left-color: var(--amber);
-  background: var(--amber-soft);
-  color: #754d0d;
+  border-left-color: var(--blue);
+  background: var(--blue-soft);
+  color: #225778;
 }
 
 .active-status-icon {
@@ -749,7 +749,7 @@ select:focus {
 }
 
 .segmented-control button[data-mode="NORMAL"].active {
-  color: #754d0d;
+  color: var(--blue);
 }
 
 .segmented-control button > span {
@@ -783,6 +783,10 @@ select:focus {
   background: var(--amber-soft);
   color: #754d0d;
   font-size: 12px;
+}
+
+.mode-pending[hidden] {
+  display: none;
 }
 
 .mode-pending svg {
