@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { normalizeOrder } = require("./order");
 const { isServiceClosed } = require("./admin-config");
+const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
 
 const PRODUCTS = {
   chocolate: {
@@ -394,7 +395,13 @@ function finalSummary(session, config) {
     `🏪 Tipo: ${type}`,
     ...(session.fulfillment.type === "DELIVERY"
       ? [`📍 Dirección: ${session.deliveryAddress || "Por confirmar"}`]
-      : []),
+      : [
+          `📍 Dirección de pickup: ${
+            session.fulfillment.pickupAddress ||
+            config.pickupAddress ||
+            DEFAULT_PICKUP_ADDRESS
+          }`,
+        ]),
     `💵 Subtotal: ${money(orderSubtotal)}`,
     `🚗 Delivery: ${money(deliveryFee)}`,
     `💰 TOTAL: ${money(orderSubtotal + deliveryFee)}`,
@@ -522,7 +529,7 @@ function finishUpdate(session) {
   return finished;
 }
 
-function confirmedMessage(session) {
+function confirmedMessage(session, config = {}) {
   const lines = [
     `🎉 ¡Pedido confirmado, ${customerLabel(session.customerName)}!`,
     "",
@@ -534,6 +541,15 @@ function confirmedMessage(session) {
   if (session.fulfillment.type === "DELIVERY") {
     lines.push(
       `📍 Dirección de entrega: ${session.deliveryAddress || "Por confirmar"}`,
+      "",
+    );
+  } else {
+    lines.push(
+      `📍 Dirección de pickup: ${
+        session.fulfillment.pickupAddress ||
+        config.pickupAddress ||
+        DEFAULT_PICKUP_ADDRESS
+      }`,
       "",
     );
   }
@@ -943,7 +959,13 @@ function advanceConversation(session, input, config, now = new Date()) {
       const next = {
         ...session,
         step: "CONFIRMATION",
-        fulfillment: { type: "PICKUP", city: "", deliveryFee: 0 },
+        fulfillment: {
+          type: "PICKUP",
+          city: "",
+          deliveryFee: 0,
+          pickupAddress:
+            config.pickupAddress || DEFAULT_PICKUP_ADDRESS,
+        },
         schedule: {
           ...session.schedule,
           timeWindow: session.schedule.pickupWindow,
@@ -1254,7 +1276,13 @@ function advanceConversation(session, input, config, now = new Date()) {
       const next = {
         ...session,
         step: "UPDATE_CONFIRMATION",
-        fulfillment: { type: "PICKUP", city: "", deliveryFee: 0 },
+        fulfillment: {
+          type: "PICKUP",
+          city: "",
+          deliveryFee: 0,
+          pickupAddress:
+            config.pickupAddress || DEFAULT_PICKUP_ADDRESS,
+        },
         schedule: {
           ...session.schedule,
           timeWindow: session.schedule.pickupWindow,
@@ -1492,7 +1520,9 @@ function buildTextOrder(session, confirmationMessage, config) {
   normalized.summary.address =
     session.fulfillment.type === "DELIVERY"
       ? session.deliveryAddress || ""
-      : "";
+      : session.fulfillment.pickupAddress ||
+        config.pickupAddress ||
+        DEFAULT_PICKUP_ADDRESS;
   normalized.summary.scheduleStatus = "CONFIRMADO";
   normalized.summary.status =
     session.fulfillment.type === "DELIVERY"

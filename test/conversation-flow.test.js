@@ -98,6 +98,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   session = result.session;
   assert.equal(session.step, "CONFIRMATION");
   assert.match(result.messages[0], /Pickup GRATIS seleccionado/);
+  assert.match(result.messages[0], /154 Royal Palm Dr, Brampton/);
   assert.match(result.messages[0], /TOTAL: \$25\.00/);
   assert.deepEqual(
     finalSummary(session, config)
@@ -120,6 +121,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   assert.equal(order.summary.grandTotal, 25);
   assert.equal(order.summary.requestedDate, "2026-08-01");
   assert.equal(order.summary.fulfillmentType, "PICKUP");
+  assert.equal(order.summary.address, "154 Royal Palm Dr, Brampton");
   assert.equal(order.summary.status, "CONFIRMADO");
   assert.deepEqual(
     order.items
@@ -131,6 +133,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
     ],
   );
   assert.match(confirmedMessage(session), /Pedido confirmado, Lic\. Gonzalez/);
+  assert.match(confirmedMessage(session), /154 Royal Palm Dr, Brampton/);
 });
 
 test("usa el catalogo y los horarios configurados desde el panel", () => {

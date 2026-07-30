@@ -149,7 +149,7 @@ test("la respuesta de ubicacion no pide confirmar la ciudad", () => {
 
 test("la respuesta de recogida usa el horario configurable", () => {
   const reply = pickupReply("4:30 p.m. a 5:30 p.m.");
-  assert.match(reply, /mandaremos la direccion/i);
+  assert.match(reply, /154 Royal Palm Dr, Brampton/i);
   assert.match(reply, /4:30 p\.m\. a 5:30 p\.m\./i);
 });
 

@@ -6,6 +6,7 @@ const {
   parseDeliveryAddress,
   scheduleOptions,
 } = require("./conversation-flow");
+const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
 
 function normalizeAnswer(value) {
   return String(value || "")
@@ -92,7 +93,11 @@ function cartFinalSummary(session) {
     `🏪 Tipo: ${type}`,
     ...(session.fulfillment.type === "DELIVERY"
       ? [`📍 Dirección: ${session.deliveryAddress}`]
-      : []),
+      : [
+          `📍 Dirección de pickup: ${
+            session.pickupAddress || DEFAULT_PICKUP_ADDRESS
+          }`,
+        ]),
     `💵 Subtotal: ${money(subtotal)}`,
     `🚗 Delivery: ${money(fee)}`,
     `💰 TOTAL: ${money(subtotal + fee)}`,
@@ -335,7 +340,7 @@ function cleanNormalizedCart(normalized) {
   return { summary, items };
 }
 
-function createCartSession(normalized) {
+function createCartSession(normalized, config = {}) {
   const cartOrder = cleanNormalizedCart(normalized);
   return {
     source: "CART",
@@ -346,6 +351,8 @@ function createCartSession(normalized) {
     step: "CART_FULFILLMENT",
     cartOrder,
     fulfillment: null,
+    pickupAddress:
+      config.pickupAddress || DEFAULT_PICKUP_ADDRESS,
     deliveryAddress: "",
     addressType: "",
     schedule: null,
@@ -366,7 +373,7 @@ function finalizedCartOrder(session) {
       address:
         session.fulfillment.type === "DELIVERY"
           ? session.deliveryAddress
-          : "",
+          : session.pickupAddress || DEFAULT_PICKUP_ADDRESS,
       requestedDate: session.schedule.date,
       timeWindow: session.schedule.timeWindow,
       deliveryFee,
@@ -665,14 +672,29 @@ function advanceCartConversation(session, input, config, now = new Date()) {
       const next = {
         ...session,
         step: "CART_DAY",
-        fulfillment: { type: "PICKUP", city: "", deliveryFee: 0 },
+        fulfillment: {
+          type: "PICKUP",
+          city: "",
+          deliveryFee: 0,
+          pickupAddress:
+            session.pickupAddress || DEFAULT_PICKUP_ADDRESS,
+        },
         deliveryAddress: "",
         addressType: "",
         scheduleOptions: choices,
       };
       return {
         session: next,
-        messages: [schedulePrompt(choices, "PICKUP")],
+        messages: [
+          [
+            "✅ Pickup GRATIS seleccionado.",
+            `📍 Dirección de pickup: ${
+              session.pickupAddress || DEFAULT_PICKUP_ADDRESS
+            }`,
+            "",
+            schedulePrompt(choices, "PICKUP"),
+          ].join("\n"),
+        ],
       };
     }
     if (answer === "2") {

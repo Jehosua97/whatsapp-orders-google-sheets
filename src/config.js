@@ -2,6 +2,7 @@
 
 const path = require("node:path");
 const dotenv = require("dotenv");
+const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
 
 dotenv.config();
 
@@ -50,6 +51,8 @@ function readConfig() {
     },
     pickupTimeWindow:
       process.env.PICKUP_TIME_WINDOW?.trim() || "5:00 p.m. a 6:00 p.m.",
+    pickupAddress:
+      process.env.PICKUP_ADDRESS?.trim() || DEFAULT_PICKUP_ADDRESS,
     automationAllowedChatIds: new Set(
       (process.env.WHATSAPP_AUTOMATION_ALLOWLIST || "")
         .split(",")

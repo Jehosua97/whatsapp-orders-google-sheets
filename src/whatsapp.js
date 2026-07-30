@@ -3,6 +3,7 @@
 const path = require("node:path");
 const QRCode = require("qrcode");
 const { Client, LocalAuth } = require("whatsapp-web.js");
+const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
 const { isAllowedChat } = require("./auto-reply-state");
 const {
   advanceConversation,
@@ -156,10 +157,13 @@ function addGrandTotal(order, patch) {
   };
 }
 
-function pickupReply(timeWindow) {
+function pickupReply(
+  timeWindow,
+  address = DEFAULT_PICKUP_ADDRESS,
+) {
   return (
     "Perfecto, registramos que vas a recoger. " +
-    "En breve te mandaremos la direccion donde puedes recogerlo " +
+    `Puedes recoger tu pedido en ${address}, ` +
     `en el horario de ${timeWindow}.`
   );
 }
@@ -210,11 +214,14 @@ async function handleFulfillmentText({ message, store, config }) {
   const patch = addGrandTotal(pending, parsed);
   if (parsed.fulfillmentType === "PICKUP") {
     patch.timeWindow = config.pickupTimeWindow;
+    patch.address = config.pickupAddress || DEFAULT_PICKUP_ADDRESS;
   }
   await store.updateOrder(pending.orderId, patch);
 
   if (parsed.fulfillmentType === "PICKUP") {
-    await message.reply(pickupReply(config.pickupTimeWindow));
+    await message.reply(
+      pickupReply(config.pickupTimeWindow, config.pickupAddress),
+    );
   } else if (parsed.city) {
     const cityName =
       parsed.city === "BRAMPTON" ? "Brampton" : "Mississauga";
@@ -307,7 +314,7 @@ async function handleConversationMessage({
       logger.log(`Pedido conversacional duplicado omitido: ${session.orderId}`);
     }
     conversationState.set(message.from, result.session);
-    await message.reply(confirmedMessage(session));
+    await message.reply(confirmedMessage(session, config));
     return true;
   }
 
@@ -509,7 +516,7 @@ function createWhatsAppClient({
           deliveryFees: runtimeConfig.deliveryFees,
           pickupTimeWindow: runtimeConfig.pickupTimeWindow,
         });
-        const session = createCartSession(normalized);
+        const session = createCartSession(normalized, runtimeConfig);
         conversationState.set(message.from, session);
         logger.log(
           `Carrito pendiente de modalidad: ${normalized.summary.orderId}`,

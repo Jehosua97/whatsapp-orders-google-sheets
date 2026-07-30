@@ -147,6 +147,7 @@ WHATSAPP_PRICE_DIVISOR=1000
 BRAMPTON_DELIVERY_FEE=5
 MISSISSAUGA_DELIVERY_FEE=8
 PICKUP_TIME_WINDOW=5:00 p.m. a 6:00 p.m.
+PICKUP_ADDRESS=154 Royal Palm Dr, Brampton
 WHATSAPP_AUTOMATION_ALLOWLIST=
 WHATSAPP_AUTOMATION_ALLOWED_PHONES=
 AUTO_REPLY_COOLDOWN_HOURS=24
@@ -280,6 +281,7 @@ answer in the follow-up flow determines the final service and fee.
 
 `PICKUP_TIME_WINDOW` controls the pickup window included in the automatic
 customer reply and in the kitchen worksheet notes.
+`PICKUP_ADDRESS` is shown in pickup summaries and stored with the order.
 
 ## Testing
 

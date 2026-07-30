@@ -100,6 +100,7 @@ test("completa un carrito con pickup gratis solamente despues de SI", () => {
   session = result.session;
   assert.equal(session.step, "CART_DAY");
   assert.match(result.messages[0], /4:00 PM a 6:00 PM/);
+  assert.match(result.messages[0], /154 Royal Palm Dr, Brampton/);
 
   result = advance(session, "1");
   session = result.session;
@@ -112,6 +113,10 @@ test("completa un carrito con pickup gratis solamente despues de SI", () => {
   assert.equal(result.session.cartOrder.summary.fulfillmentType, "PICKUP");
   assert.equal(result.session.cartOrder.summary.deliveryFee, 0);
   assert.equal(result.session.cartOrder.summary.grandTotal, 17.5);
+  assert.equal(
+    result.session.cartOrder.summary.address,
+    "154 Royal Palm Dr, Brampton",
+  );
   assert.equal(result.session.cartOrder.summary.status, "CONFIRMADO");
 });
 
