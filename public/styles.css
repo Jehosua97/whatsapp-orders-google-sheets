@@ -1121,6 +1121,15 @@ fieldset {
     display: none;
   }
 
+  .sheet-link {
+    width: 38px;
+    padding: 0;
+  }
+
+  .sheet-link span {
+    display: none;
+  }
+
   .app-shell {
     display: block;
   }
