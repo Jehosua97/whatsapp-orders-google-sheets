@@ -1,8 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $taskName = "La Cenaduria WhatsApp Bot"
+$watchdogTaskName = "La Cenaduria Bot Watchdog"
 $projectDirectory = Split-Path -Parent $PSScriptRoot
 $launcher = Join-Path $PSScriptRoot "start-bot.cmd"
+$watchdog = Join-Path $PSScriptRoot "watchdog.ps1"
+$disabledMarker = Join-Path $projectDirectory ".data\system-disabled"
 $userId = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 $action = New-ScheduledTaskAction `
@@ -34,5 +37,35 @@ Register-ScheduledTask `
   -InputObject $task `
   -Force | Out-Null
 
+if (Test-Path $disabledMarker) {
+  Remove-Item -LiteralPath $disabledMarker -Force
+}
+
+$watchdogAction = New-ScheduledTaskAction `
+  -Execute "powershell.exe" `
+  -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$watchdog`"" `
+  -WorkingDirectory $projectDirectory
+$watchdogTrigger = New-ScheduledTaskTrigger `
+  -Once `
+  -At ((Get-Date).AddMinutes(1)) `
+  -RepetitionInterval (New-TimeSpan -Minutes 1)
+$watchdogSettings = New-ScheduledTaskSettingsSet `
+  -AllowStartIfOnBatteries `
+  -DontStopIfGoingOnBatteries `
+  -ExecutionTimeLimit (New-TimeSpan -Minutes 1) `
+  -MultipleInstances IgnoreNew `
+  -StartWhenAvailable
+$watchdogTask = New-ScheduledTask `
+  -Action $watchdogAction `
+  -Trigger $watchdogTrigger `
+  -Principal $principal `
+  -Settings $watchdogSettings
+
+Register-ScheduledTask `
+  -TaskName $watchdogTaskName `
+  -InputObject $watchdogTask `
+  -Force | Out-Null
+
 Write-Output "Scheduled task installed: $taskName"
+Write-Output "Watchdog installed: $watchdogTaskName"
 Write-Output "The bot will start automatically when $userId signs in."

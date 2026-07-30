@@ -28,7 +28,6 @@ async function main() {
     conversationState,
     store,
   });
-  await whatsapp.initialize();
   const admin = createAdminServer({
     config,
     configStore,
@@ -40,6 +39,13 @@ async function main() {
   console.log(
     `Panel administrativo: http://${config.adminHost}:${config.adminPort}`,
   );
+  try {
+    await whatsapp.initialize();
+  } catch (error) {
+    await new Promise((resolve) => adminServer.close(resolve));
+    await whatsapp.destroy().catch(() => {});
+    throw error;
+  }
   const kitchenSyncTimer = setInterval(() => {
     store.syncKitchenView().catch((error) => {
       console.error("No se pudo sincronizar el status de cocina:", error);

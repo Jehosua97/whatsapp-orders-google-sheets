@@ -151,6 +151,13 @@ function createAdminServer({
 
   app.disable("x-powered-by");
   app.use(express.json({ limit: "256kb" }));
+  app.get("/health", (_request, response) => {
+    response.json({
+      status: "ok",
+      whatsapp: whatsapp.lacenaduriaStatus || "CONNECTING",
+      uptimeSeconds: Math.floor(process.uptime()),
+    });
+  });
   app.use("/api", basicAuthMiddleware(config.adminPassword));
   app.get("/vendor/lucide.js", (_request, response) => {
     response.sendFile(

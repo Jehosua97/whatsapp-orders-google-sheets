@@ -331,9 +331,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-window
 ```
 
 The task starts when the current Windows user signs in, keeps running while
-the computer is locked, and retries one minute after an unexpected exit.
-Standard output and errors are appended to `bot.stdout.log` and
-`bot.stderr.log`.
+the computer is locked, and restarts Node ten seconds after an unexpected
+exit. An independent watchdog checks `/health` every minute and restarts the
+scheduled task when the dashboard is unavailable. Standard output and errors
+are appended to `bot.stdout.log`, `bot.stderr.log`, and
+`bot.watchdog.log`.
 
 Windows must remain powered on, awake, and connected to the Internet. To
 remove the task:

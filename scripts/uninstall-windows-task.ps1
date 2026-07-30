@@ -1,12 +1,15 @@
 $ErrorActionPreference = "Stop"
 
 $taskName = "La Cenaduria WhatsApp Bot"
-$task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+$watchdogTaskName = "La Cenaduria Bot Watchdog"
 
-if ($task) {
-  Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-  Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-  Write-Output "Scheduled task removed: $taskName"
-} else {
-  Write-Output "Scheduled task not found: $taskName"
+foreach ($name in @($taskName, $watchdogTaskName)) {
+  $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+  if ($task) {
+    Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $name -Confirm:$false
+    Write-Output "Scheduled task removed: $name"
+  } else {
+    Write-Output "Scheduled task not found: $name"
+  }
 }
