@@ -9,6 +9,7 @@ const {
   buildTextOrder,
   confirmedMessage,
   ConversationStateStore,
+  finalSummary,
   menuMessage,
   newSession,
   parseDeliveryAddress,
@@ -97,6 +98,12 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   assert.equal(session.step, "CONFIRMATION");
   assert.match(result.messages[0], /Pickup GRATIS seleccionado/);
   assert.match(result.messages[0], /TOTAL: \$25\.00/);
+  assert.deepEqual(
+    finalSummary(session, config)
+      .split("\n")
+      .filter((line) => /^━+$/.test(line)),
+    ["━━━━━━━━━━", "━━━━━━━━━━", "━━━━━━━━━━"],
+  );
 
   result = answer(session, "SI");
   assert.equal(result.completed, true);

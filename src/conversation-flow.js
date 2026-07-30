@@ -385,9 +385,9 @@ function finalSummary(session, config) {
         }`;
   return [
     "📋 RESUMEN FINAL DE TU PEDIDO:",
-    "━━━━━━━━━━━━━━━━━━",
+    "━━━━━━━━━━",
     ...productLines(session.quantities, config.menuPrices, false, config),
-    "━━━━━━━━━━━━━━━━━━",
+    "━━━━━━━━━━",
     `📦 Total piezas: ${pieces}`,
     `📅 Entrega: ${session.schedule.name} ${session.schedule.timeWindow}`,
     `🏪 Tipo: ${type}`,
@@ -397,7 +397,7 @@ function finalSummary(session, config) {
     `💵 Subtotal: ${money(orderSubtotal)}`,
     `🚗 Delivery: ${money(deliveryFee)}`,
     `💰 TOTAL: ${money(orderSubtotal + deliveryFee)}`,
-    "━━━━━━━━━━━━━━━━━━",
+    "━━━━━━━━━━",
     "",
     "¿Confirmas tu pedido?",
     "✅ Escribe SI para confirmar",
