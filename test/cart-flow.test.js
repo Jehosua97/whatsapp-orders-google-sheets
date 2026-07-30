@@ -148,6 +148,16 @@ test("una instruccion inesperada no crea productos undefined", () => {
   assert.doesNotMatch(result.messages[0], /undefined/i);
 });
 
+test("un texto cualquiera responde con el carrito confirmado", () => {
+  const session = completedCartSession();
+  const result = advance(session, "tengo una pregunta");
+
+  assert.equal(result.session.step, "CART_COMPLETED");
+  assert.equal(result.session.orderId, session.orderId);
+  assert.match(result.messages[0], /Este es tu pedido confirmado/);
+  assert.match(result.messages[0], /Actualizar pedido/);
+});
+
 test("permite agregar y quitar productos de un carrito confirmado", () => {
   let result = advance(completedCartSession(), "agregar producto");
   let session = result.session;

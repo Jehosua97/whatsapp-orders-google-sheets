@@ -150,7 +150,7 @@ function cartCompletedReminder(session) {
     cartFinalSummary(session),
     "",
     "¿Qué deseas hacer?",
-    "1 - Actualizar fecha o modalidad",
+    "1 - Actualizar pedido",
     "2 - Crear un pedido nuevo",
     "",
     "También puedes escribir ACTUALIZAR PEDIDO o NUEVO PEDIDO.",
@@ -484,7 +484,10 @@ function advanceCartConversation(session, input, config, now = new Date()) {
         messages: [cartCompletedReminder(session)],
       };
     }
-    return { session, messages: [] };
+    return {
+      session,
+      messages: [cartCompletedReminder(session)],
+    };
   }
 
   if (

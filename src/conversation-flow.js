@@ -212,7 +212,7 @@ function normalizeAnswer(value) {
 
 function updateKeyword(value) {
   const answer = normalizeAnswer(value);
-  return /\b(ACTUALIZAR|AGREGAR|ANADIR|QUITAR|ELIMINAR|CAMBIAR|MODIFICAR|CANCELAR|CANCELACION|DIA|FECHA|PICKUP|DELIVERY|ENTREGA|RECOGER)\b/.test(
+  return /\b(ACTUALIZAR|AGREGAR|ANADIR|QUITAR|ELIMINAR|CAMBIAR|MODIFICAR|CANCELAR|CANCELACION|PICKUP|DELIVERY|ENTREGA|RECOGER)\b/.test(
     answer,
   );
 }
@@ -736,7 +736,10 @@ function advanceConversation(session, input, config, now = new Date()) {
         messages: [currentOrderMessage(next, config)],
       };
     }
-    return { session, messages: [] };
+    return {
+      session,
+      messages: [confirmedOrderReminder(session, config)],
+    };
   }
 
   if (session.step === "CANCELED") {
