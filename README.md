@@ -291,6 +291,19 @@ customer conversation to pause automatic replies only for that chat. Send
 cannot activate these commands, and the paused state survives application
 restarts.
 
+### Disable the system remotely
+
+The phone configured in `ADMIN_COMMAND_ALLOWED_PHONE` can send
+`DISABLE SYSTEM` in a direct conversation. The command disables the Windows
+scheduled task and then shuts down the bot without deleting project files,
+credentials, conversations, or orders. Other phone numbers cannot execute it.
+
+Re-enable and start the system locally with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\enable-system.ps1
+```
+
 ## Testing
 
 ```powershell

@@ -42,10 +42,9 @@ function readConfig() {
       /\D/g,
       "",
     ),
-    readmeDeleteAllowedPhone: (
-      process.env.README_DELETE_ALLOWED_PHONE || ""
+    adminCommandAllowedPhone: (
+      process.env.ADMIN_COMMAND_ALLOWED_PHONE || ""
     ).replace(/\D/g, ""),
-    readmeFile: path.resolve("README.md"),
     whatsappPairingMode:
       process.env.WHATSAPP_PAIRING_MODE?.trim().toLowerCase() || "auto",
     whatsappPriceDivisor: number("WHATSAPP_PRICE_DIVISOR", 1000),

@@ -2,7 +2,6 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const {
@@ -12,7 +11,7 @@ const {
   handleBotControlMessage,
   handleConversationMessage,
   handleLocation,
-  handleReadmeDeleteCommand,
+  handleSystemDisableCommand,
   isAllowedMessage,
   isDirectChatId,
   locationReceivedReply,
@@ -93,45 +92,54 @@ test("solo el negocio puede pausar y reactivar un chat individual", () => {
   assert.equal(paused.has("customer@lid"), false);
 });
 
-test("solo el numero autorizado puede eliminar el README", async () => {
-  const directory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "lacenaduria-readme-command-"),
-  );
-  const readmeFile = path.join(directory, "README.md");
+test("solo el numero autorizado puede desactivar el sistema", async () => {
   const replies = [];
-  fs.writeFileSync(readmeFile, "test");
+  let disabled = 0;
+  let shutdowns = 0;
+  const disableSystem = async () => {
+    disabled += 1;
+  };
+  const shutdownSystem = () => {
+    shutdowns += 1;
+  };
 
-  const unauthorizedHandled = await handleReadmeDeleteCommand({
+  const unauthorizedHandled = await handleSystemDisableCommand({
     message: {
       type: "chat",
       from: "14165550123@c.us",
-      body: ". . . . .",
+      body: "DISABLE SYSTEM",
       reply: async (value) => replies.push(value),
     },
     client: {},
     allowedPhone: "4378781645",
-    readmeFile,
+    disableSystem,
+    shutdownSystem,
     logger: { log() {} },
   });
   assert.equal(unauthorizedHandled, true);
-  assert.equal(fs.existsSync(readmeFile), true);
+  assert.equal(disabled, 0);
+  assert.equal(shutdowns, 0);
   assert.equal(replies.length, 0);
 
-  const authorizedHandled = await handleReadmeDeleteCommand({
+  const authorizedHandled = await handleSystemDisableCommand({
     message: {
       type: "chat",
       from: "14378781645@c.us",
-      body: ". . . . .",
+      body: "disable system",
       reply: async (value) => replies.push(value),
     },
     client: {},
     allowedPhone: "4378781645",
-    readmeFile,
+    disableSystem,
+    shutdownSystem,
     logger: { log() {} },
   });
   assert.equal(authorizedHandled, true);
-  assert.equal(fs.existsSync(readmeFile), false);
-  assert.deepEqual(replies, ["Comando administrativo completado."]);
+  assert.equal(disabled, 1);
+  assert.equal(shutdowns, 1);
+  assert.deepEqual(replies, [
+    "Sistema desactivado. El bot no volvera a iniciar automaticamente.",
+  ]);
 });
 
 test("resuelve el numero asociado a un chat LID", async () => {

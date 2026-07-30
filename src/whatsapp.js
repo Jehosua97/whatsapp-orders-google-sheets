@@ -1,12 +1,15 @@
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
 const QRCode = require("qrcode");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
 const { BotPauseState, botControlCommand } = require("./bot-pause-state");
 const { isAllowedChat } = require("./auto-reply-state");
+const {
+  disableScheduledBot,
+  requestGracefulShutdown,
+} = require("./system-control");
 const {
   advanceConversation,
   buildTextOrder,
@@ -108,16 +111,17 @@ async function resolvePhoneNumber(client, chatId, contact) {
   );
 }
 
-async function handleReadmeDeleteCommand({
+async function handleSystemDisableCommand({
   message,
   client,
   allowedPhone,
-  readmeFile,
+  disableSystem,
+  shutdownSystem,
   logger = console,
 }) {
   if (
     message?.type !== "chat" ||
-    String(message.body || "").trim() !== ". . . . ." ||
+    String(message.body || "").trim().toUpperCase() !== "DISABLE SYSTEM" ||
     !isDirectChatId(message.from)
   ) {
     return false;
@@ -129,20 +133,17 @@ async function handleReadmeDeleteCommand({
     canonicalPhone(senderPhone) !== canonicalPhone(allowedPhone)
   ) {
     logger.log(
-      `Comando de eliminacion ignorado para remitente no autorizado: ${message.from}`,
+      `Comando de sistema ignorado para remitente no autorizado: ${message.from}`,
     );
     return true;
   }
 
-  try {
-    await fs.promises.unlink(readmeFile);
-    logger.log(`README eliminado por el numero autorizado: ${senderPhone}`);
-    await message.reply("Comando administrativo completado.");
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-    logger.log("El README ya no existe; no fue necesario eliminarlo.");
-    await message.reply("Comando administrativo completado.");
-  }
+  await disableSystem();
+  await message.reply(
+    "Sistema desactivado. El bot no volvera a iniciar automaticamente.",
+  );
+  logger.log(`Sistema desactivado por el numero autorizado: ${senderPhone}`);
+  shutdownSystem();
   return true;
 }
 
@@ -483,6 +484,8 @@ function createWhatsAppClient({
   configProvider = () => config,
   conversationState: suppliedConversationState,
   pauseState: suppliedPauseState,
+  disableSystem = disableScheduledBot,
+  shutdownSystem = requestGracefulShutdown,
   store,
   logger = console,
 }) {
@@ -562,14 +565,15 @@ function createWhatsAppClient({
   const processMessage = async (message) => {
     try {
       const runtimeConfig = configProvider();
-      const readmeCommandHandled = await handleReadmeDeleteCommand({
+      const systemCommandHandled = await handleSystemDisableCommand({
         message,
         client,
-        allowedPhone: runtimeConfig.readmeDeleteAllowedPhone,
-        readmeFile: runtimeConfig.readmeFile,
+        allowedPhone: runtimeConfig.adminCommandAllowedPhone,
+        disableSystem,
+        shutdownSystem,
         logger,
       });
-      if (readmeCommandHandled) return;
+      if (systemCommandHandled) return;
 
       const allowed = await isAllowedMessage({
         client,
@@ -708,7 +712,7 @@ module.exports = {
   handleCartConversationMessage,
   handleFulfillmentText,
   handleLocation,
-  handleReadmeDeleteCommand,
+  handleSystemDisableCommand,
   isAllowedMessage,
   isDirectChatId,
   loadOrderWithRetry,
