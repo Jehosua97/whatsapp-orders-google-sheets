@@ -58,6 +58,10 @@ function phoneFromWhatsAppId(value) {
   return serialized.replace(/@.+$/, "").replace(/\D/g, "");
 }
 
+function isDirectChatId(value) {
+  return /@(?:c\.us|s\.whatsapp\.net|lid)$/i.test(String(value || ""));
+}
+
 async function resolvePhoneNumber(client, chatId, contact) {
   if (String(chatId).endsWith("@lid")) {
     try {
@@ -85,6 +89,8 @@ async function isAllowedMessage({
   blockedPhones,
   mode = "TESTING",
 }) {
+  if (!isDirectChatId(chatId)) return false;
+
   const phones = allowedPhones instanceof Set ? allowedPhones : new Set();
   const blocked =
     blockedPhones instanceof Set ? blockedPhones : new Set();
@@ -610,6 +616,7 @@ module.exports = {
   handleFulfillmentText,
   handleLocation,
   isAllowedMessage,
+  isDirectChatId,
   loadOrderWithRetry,
   locationReceivedReply,
   phoneFromWhatsAppId,

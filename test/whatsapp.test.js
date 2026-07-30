@@ -11,6 +11,7 @@ const {
   handleConversationMessage,
   handleLocation,
   isAllowedMessage,
+  isDirectChatId,
   locationReceivedReply,
   phoneFromWhatsAppId,
   pickupReply,
@@ -27,6 +28,15 @@ test("extrae un telefono de un ID telefonico de WhatsApp", () => {
 
 test("nunca presenta un LID como numero telefonico", () => {
   assert.equal(phoneFromWhatsAppId("999888777666555@lid"), "");
+});
+
+test("solo reconoce conversaciones individuales como chats directos", () => {
+  assert.equal(isDirectChatId("14165550123@c.us"), true);
+  assert.equal(isDirectChatId("14165550123@s.whatsapp.net"), true);
+  assert.equal(isDirectChatId("999888777666555@lid"), true);
+  assert.equal(isDirectChatId("120363000000000000@g.us"), false);
+  assert.equal(isDirectChatId("status@broadcast"), false);
+  assert.equal(isDirectChatId("12345@newsletter"), false);
 });
 
 test("resuelve el numero asociado a un chat LID", async () => {
@@ -134,6 +144,17 @@ test("el modo normal responde a todos excepto numeros bloqueados", async () => {
       allowedChatIds: new Set(),
       allowedPhones: new Set(["15559999999"]),
       blockedPhones: new Set(["15559999999"]),
+      mode: "NORMAL",
+    }),
+    false,
+  );
+  assert.equal(
+    await isAllowedMessage({
+      client,
+      chatId: "120363000000000000@g.us",
+      allowedChatIds: new Set(["120363000000000000@g.us"]),
+      allowedPhones: new Set(),
+      blockedPhones: new Set(),
       mode: "NORMAL",
     }),
     false,
