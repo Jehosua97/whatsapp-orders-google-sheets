@@ -241,7 +241,17 @@ test("HOLA conserva el pedido confirmado y NUEVO PEDIDO inicia otro", () => {
 
   assert.equal(result.session.step, "COMPLETED");
   assert.equal(result.session.orderId, confirmed.orderId);
-  assert.match(result.messages[0], /Ya tienes un pedido confirmado/);
+  assert.match(result.messages[0], /Este es tu pedido confirmado/);
+  assert.match(result.messages[0], /Conchitas Chocolate: 5/);
+  assert.match(result.messages[0], /1 - Actualizar pedido/);
+  assert.match(result.messages[0], /2 - Crear un pedido nuevo/);
+
+  result = answer(confirmed, "1");
+  assert.equal(result.session.step, "UPDATE_MENU");
+
+  result = answer(confirmed, "2");
+  assert.equal(result.session.step, "MENU");
+  assert.notEqual(result.session.orderId, confirmed.orderId);
 
   result = answer(confirmed, "nuevo pedido");
   assert.equal(result.session.step, "MENU");

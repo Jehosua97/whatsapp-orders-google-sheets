@@ -426,13 +426,20 @@ function currentOrderMessage(session, config) {
   ].join("\n");
 }
 
-function confirmedOrderReminder(session) {
+function confirmedOrderReminder(session, config) {
+  const summary = finalSummary(session, config)
+    .split("\n")
+    .slice(0, -4);
   return [
-    `Hola, ${customerLabel(session.customerName)}.`,
+    `Hola, ${customerLabel(session.customerName)}. Este es tu pedido confirmado:`,
     "",
-    "Ya tienes un pedido confirmado.",
-    "Para modificarlo escribe ACTUALIZAR PEDIDO.",
-    "Para crear otro escribe NUEVO PEDIDO.",
+    ...summary,
+    "",
+    "¿Qué deseas hacer?",
+    "1 - Actualizar pedido",
+    "2 - Crear un pedido nuevo",
+    "",
+    "También puedes escribir ACTUALIZAR PEDIDO o NUEVO PEDIDO.",
   ].join("\n");
 }
 
@@ -608,7 +615,7 @@ function advanceConversation(session, input, config, now = new Date()) {
   ];
 
   if (session.step === "COMPLETED") {
-    if (newOrderCommands.includes(answer)) {
+    if (newOrderCommands.includes(answer) || answer === "2") {
       const next = newSession({
         chatId: session.chatId,
         customerName: session.customerName,
@@ -621,10 +628,31 @@ function advanceConversation(session, input, config, now = new Date()) {
         messages: [menuMessage(next.customerName, config)],
       };
     }
-    if (["HOLA", "MENU", "PEDIDO", "ORDEN"].includes(answer)) {
+    if (
+      [
+        "HOLA",
+        "MENU",
+        "PEDIDO",
+        "ORDEN",
+        "BUENOS DIAS",
+        "BUENAS TARDES",
+        "BUENAS NOCHES",
+      ].includes(answer)
+    ) {
       return {
         session,
-        messages: [confirmedOrderReminder(session)],
+        messages: [confirmedOrderReminder(session, config)],
+      };
+    }
+    if (answer === "1") {
+      const next = {
+        ...session,
+        step: "UPDATE_MENU",
+        updateBackup: updateBackup(session),
+      };
+      return {
+        session: next,
+        messages: [currentOrderMessage(next, config)],
       };
     }
     if (updateKeyword(answer)) {
