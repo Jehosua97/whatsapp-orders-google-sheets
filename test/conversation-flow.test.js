@@ -15,6 +15,7 @@ const {
   parseDeliveryAddress,
   subtotal,
   totalPieces,
+  updatedMessage,
 } = require("../src/conversation-flow");
 
 const config = {
@@ -339,6 +340,7 @@ test("detecta agregar y actualiza cantidades solo despues de SI", () => {
   assert.equal(result.updated, true);
   assert.equal(result.session.step, "COMPLETED");
   assert.equal(result.session.quantities.bolillo, 5);
+  assert.match(updatedMessage(result.session, config), /consultar tu pedido escribe HOLA/i);
 });
 
 test("NO descarta una modificacion y restaura el pedido anterior", () => {

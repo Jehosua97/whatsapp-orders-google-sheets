@@ -366,6 +366,8 @@ async function handleCartConversationMessage({
         "✅ Tu pedido fue actualizado.",
         "",
         cartFinalSummary(result.session),
+        "",
+        "Para consultar tu pedido escribe HOLA.",
       ].join("\n"),
     );
     return true;

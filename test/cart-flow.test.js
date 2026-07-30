@@ -74,6 +74,13 @@ function advance(session, input) {
   return advanceCartConversation(session, input, config, monday);
 }
 
+function completedCartSession() {
+  let session = createCartSession(normalizedCart());
+  session = advance(session, "1").session;
+  session = advance(session, "1").session;
+  return advance(session, "SI").session;
+}
+
 test("el carrito pregunta pickup o delivery e ignora productos logisticos", () => {
   const session = createCartSession(normalizedCart());
   const received = cartReceivedMessage(session, config);
@@ -141,6 +148,65 @@ test("una instruccion inesperada no crea productos undefined", () => {
   assert.doesNotMatch(result.messages[0], /undefined/i);
 });
 
+test("permite agregar y quitar productos de un carrito confirmado", () => {
+  let result = advance(completedCartSession(), "agregar producto");
+  let session = result.session;
+  assert.equal(session.step, "CART_UPDATE_PRODUCT");
+  assert.match(result.messages[0], /Qué producto deseas agregar/);
+  assert.match(result.messages[0], /Conchitas de Vainilla/);
+
+  session = advance(session, "2").session;
+  result = advance(session, "2");
+  session = result.session;
+  assert.equal(session.step, "CART_UPDATE_CONFIRMATION");
+  assert.equal(session.cartOrder.items.length, 2);
+  assert.equal(session.cartOrder.summary.total, 24.5);
+  assert.match(result.messages[0], /2 Concha de Vainilla/);
+
+  result = advance(session, "SI");
+  session = result.session;
+  assert.equal(result.updated, true);
+  assert.equal(session.step, "CART_COMPLETED");
+
+  session = advance(session, "quitar").session;
+  assert.equal(session.step, "CART_UPDATE_PRODUCT");
+  session = advance(session, "1").session;
+  result = advance(session, "1");
+  assert.equal(result.session.cartOrder.summary.total, 21);
+  assert.match(result.messages[0], /4 Conchita Chocolate/);
+});
+
+test("al agregar un producto existente no crea una linea duplicada", () => {
+  let session = advance(completedCartSession(), "agregar").session;
+  session = advance(session, "1").session;
+  const result = advance(session, "1");
+
+  assert.equal(result.session.cartOrder.items.length, 1);
+  assert.equal(result.session.cartOrder.items[0].quantity, 6);
+  assert.equal(result.session.cartOrder.summary.total, 21);
+});
+
+test("NO descarta los cambios de productos del carrito", () => {
+  let session = advance(completedCartSession(), "agregar").session;
+  session = advance(session, "2").session;
+  session = advance(session, "2").session;
+  assert.equal(session.cartOrder.summary.total, 24.5);
+
+  const result = advance(session, "NO");
+  assert.equal(result.session.step, "CART_COMPLETED");
+  assert.equal(result.session.cartOrder.items.length, 1);
+  assert.equal(result.session.cartOrder.summary.total, 17.5);
+});
+
+test("un carrito actualizado conserva el minimo de piezas", () => {
+  let session = advance(completedCartSession(), "quitar").session;
+  session = advance(session, "1").session;
+  const result = advance(session, "2");
+
+  assert.equal(result.session.step, "CART_UPDATE_QUANTITY");
+  assert.match(result.messages[0], /al menos 5 piezas/i);
+});
+
 test("el manejador de carrito no guarda antes de la confirmacion final", async () => {
   const state = new ConversationStateStore(
     path.join(
@@ -152,13 +218,16 @@ test("el manejador de carrito no guarda antes de la confirmacion final", async (
   state.set(chatId, createCartSession(normalizedCart()));
 
   const savedOrders = [];
+  const replacedOrders = [];
   const replies = [];
   const store = {
     saveOrder: async (order) => {
       savedOrders.push(order);
       return { inserted: true };
     },
-    replaceOrder: async () => {},
+    replaceOrder: async (order) => {
+      replacedOrders.push(order);
+    },
     updateOrder: async () => {},
   };
   const send = async (body) =>
@@ -182,4 +251,14 @@ test("el manejador de carrito no guarda antes de la confirmacion final", async (
   assert.equal(savedOrders.length, 1);
   assert.equal(savedOrders[0].summary.fulfillmentType, "PICKUP");
   assert.match(replies.at(-1), /pedido fue confirmado/i);
+
+  await send("agregar");
+  await send("2");
+  await send("2");
+  assert.equal(replacedOrders.length, 0);
+
+  await send("SI");
+  assert.equal(replacedOrders.length, 1);
+  assert.equal(replacedOrders[0].summary.total, 24.5);
+  assert.match(replies.at(-1), /consultar tu pedido escribe HOLA/i);
 });

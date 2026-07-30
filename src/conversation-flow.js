@@ -566,6 +566,7 @@ function updatedMessage(session, config) {
   lines.push(
     "",
     "Para hacer otro cambio escribe ACTUALIZAR PEDIDO.",
+    "Para consultar tu pedido escribe HOLA.",
   );
   return lines.join("\n");
 }

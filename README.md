@@ -226,7 +226,8 @@ Maps coordinates link otherwise.
 
 After confirmation, customers can write `ACTUALIZAR PEDIDO` or use natural
 words such as `agregar`, `quitar`, `cambiar`, or `cancelar`. The bot reminds
-them of the current order and offers these actions:
+them of the current order and offers these actions for both catalog carts and
+orders captured through chat:
 
 - Add or remove a product quantity.
 - Change the delivery day.

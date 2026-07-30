@@ -1,6 +1,7 @@
 "use strict";
 
 const {
+  catalogProducts,
   newSession,
   parseDeliveryAddress,
   scheduleOptions,
@@ -161,11 +162,155 @@ function cartUpdateMenu(session) {
     cartFinalSummary(session),
     "",
     "¿Qué deseas actualizar?",
-    "1 - Cambiar fecha",
-    "2 - Cambiar Pickup / Delivery",
-    "3 - Cancelar pedido",
-    "4 - No hacer cambios",
+    "1 - Agregar productos",
+    "2 - Quitar productos",
+    "3 - Cambiar fecha",
+    "4 - Cambiar Pickup / Delivery",
+    "5 - Cancelar pedido",
+    "6 - No hacer cambios",
   ].join("\n");
+}
+
+function canonicalProductName(value) {
+  const ignoredWords = new Set(["de", "del", "la", "las", "el", "los"]);
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\bconchitas?\b/g, "concha")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter((word) => word && !ignoredWords.has(word))
+    .map((word) =>
+      word.length > 3 && word.endsWith("s")
+        ? word.slice(0, -1)
+        : word,
+    )
+    .join(" ");
+}
+
+function productMatchesItem(product, item) {
+  const productIds = [product.id, product.productId]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+  if (productIds.includes(String(item.productId || "").toLowerCase())) {
+    return true;
+  }
+  const itemName = canonicalProductName(item.productName);
+  return [
+    product.name,
+    product.displayName,
+    product.promptName,
+    product.sheetName,
+  ]
+    .filter(Boolean)
+    .some((name) => canonicalProductName(name) === itemName);
+}
+
+function totalCartPieces(session) {
+  return foodItems(session.cartOrder).reduce(
+    (total, item) => total + Number(item.quantity || 0),
+    0,
+  );
+}
+
+function cartProductChoices(session, action, config) {
+  const items = foodItems(session.cartOrder);
+  if (action === "REMOVE") {
+    return items
+      .map((item, itemIndex) => ({
+        itemIndex,
+        productId: item.productId,
+        productName: item.productName,
+        promptName: item.productName,
+        currentQuantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+      }))
+      .filter((choice) => choice.currentQuantity > 0);
+  }
+
+  return catalogProducts(config)
+    .filter((product) => product.active !== false)
+    .map((product) => {
+      const itemIndex = items.findIndex((item) =>
+        productMatchesItem(product, item),
+      );
+      const existing = itemIndex >= 0 ? items[itemIndex] : null;
+      return {
+        itemIndex,
+        productId:
+          existing?.productId || product.productId || product.id,
+        productName:
+          existing?.productName ||
+          product.sheetName ||
+          product.name ||
+          product.id,
+        promptName:
+          product.promptName || product.name || product.id,
+        currentQuantity: Number(existing?.quantity || 0),
+        unitPrice: Number(
+          existing?.unitPrice ?? product.price ?? 0,
+        ),
+      };
+    });
+}
+
+function cartProductUpdateMenu(session, action, choices) {
+  const verb = action === "ADD" ? "agregar" : "quitar";
+  if (!choices.length) {
+    return `No hay productos disponibles para ${verb}.`;
+  }
+  return [
+    `¿Qué producto deseas ${verb}?`,
+    ...choices.map(
+      (choice, index) =>
+        `${index + 1} - ${choice.promptName} (actual: ${choice.currentQuantity})`,
+    ),
+  ].join("\n");
+}
+
+function beginCartProductUpdate(session, action, config) {
+  const choices = cartProductChoices(session, action, config);
+  const next = {
+    ...session,
+    step: "CART_UPDATE_PRODUCT",
+    updateAction: action,
+    updateProductChoices: choices,
+    updateBackup: session.updateBackup || updateBackup(session),
+  };
+  return {
+    session: next,
+    messages: [cartProductUpdateMenu(next, action, choices)],
+  };
+}
+
+function recalculateCartOrder(session, items) {
+  const activeItems = items
+    .filter((item) => Number(item.quantity || 0) > 0)
+    .map((item) => ({
+      ...item,
+      quantity: Number(item.quantity),
+      lineTotal:
+        Number(item.quantity) * Number(item.unitPrice || 0),
+    }));
+  const productsTotal = activeItems.reduce(
+    (total, item) => total + Number(item.lineTotal || 0),
+    0,
+  );
+  const deliveryFee = Number(session.fulfillment?.deliveryFee || 0);
+  return {
+    summary: {
+      ...session.cartOrder.summary,
+      subtotal: productsTotal,
+      total: productsTotal,
+      grandTotal: productsTotal + deliveryFee,
+      productSummary: activeItems
+        .map((item) => `${item.quantity} x ${item.productName}`)
+        .join(", "),
+      updatedAt: new Date().toISOString(),
+    },
+    items: activeItems,
+  };
 }
 
 function cleanNormalizedCart(normalized) {
@@ -259,6 +404,9 @@ function restoreUpdate(session) {
     updateMode: false,
   };
   delete restored.updateBackup;
+  delete restored.updateAction;
+  delete restored.updateProductChoices;
+  delete restored.updateProductChoice;
   return restored;
 }
 
@@ -271,6 +419,9 @@ function finishCart(session, step = "CART_COMPLETED") {
     updateMode: false,
   };
   delete finished.updateBackup;
+  delete finished.updateAction;
+  delete finished.updateProductChoices;
+  delete finished.updateProductChoice;
   return finished;
 }
 
@@ -297,10 +448,13 @@ function advanceCartConversation(session, input, config, now = new Date()) {
       });
       return { session: next, startTextOrder: true, messages: [] };
     }
-    if (
-      answer === "1" ||
-      /\b(ACTUALIZAR|CAMBIAR|MODIFICAR)\b/.test(answer)
-    ) {
+    if (/\b(AGREGAR|ANADIR)\b/.test(answer)) {
+      return beginCartProductUpdate(session, "ADD", config);
+    }
+    if (/\b(QUITAR|ELIMINAR)\b/.test(answer)) {
+      return beginCartProductUpdate(session, "REMOVE", config);
+    }
+    if (answer === "1" || /\b(ACTUALIZAR|CAMBIAR|MODIFICAR)\b/.test(answer)) {
       const next = {
         ...session,
         step: "CART_UPDATE_MENU",
@@ -330,19 +484,40 @@ function advanceCartConversation(session, input, config, now = new Date()) {
         messages: [cartCompletedReminder(session)],
       };
     }
-    if (/\b(AGREGAR|QUITAR|ELIMINAR|PRODUCTO)\b/.test(answer)) {
-      return {
-        session,
-        messages: [
-          "Para cambiar los productos envía un carrito nuevo desde el catálogo.",
-        ],
-      };
-    }
     return { session, messages: [] };
   }
 
+  if (
+    String(session.step).startsWith("CART_UPDATE") &&
+    session.step !== "CART_CANCEL_CONFIRMATION" &&
+    /\b(CANCELAR|CANCELACION)\b/.test(answer)
+  ) {
+    return {
+      session: { ...session, step: "CART_CANCEL_CONFIRMATION" },
+      messages: [
+        "⚠️ ¿Seguro que deseas cancelar todo el pedido?\nEscribe SI para cancelarlo o NO para conservarlo.",
+      ],
+    };
+  }
+
   if (session.step === "CART_UPDATE_MENU") {
-    if (answer === "1" || /\b(FECHA|DIA)\b/.test(answer)) {
+    let option = answer;
+    if (/\b(AGREGAR|ANADIR)\b/.test(answer)) option = "1";
+    if (/\b(QUITAR|ELIMINAR)\b/.test(answer)) option = "2";
+    if (/\b(FECHA|DIA)\b/.test(answer)) option = "3";
+    if (/\b(PICKUP|DELIVERY|ENTREGA|RECOGER)\b/.test(answer)) {
+      option = "4";
+    }
+    if (/\b(CANCELAR|CANCELACION)\b/.test(answer)) option = "5";
+
+    if (option === "1" || option === "2") {
+      return beginCartProductUpdate(
+        session,
+        option === "1" ? "ADD" : "REMOVE",
+        config,
+      );
+    }
+    if (option === "3") {
       const choices = scheduleOptions(
         config,
         now,
@@ -358,10 +533,7 @@ function advanceCartConversation(session, input, config, now = new Date()) {
         messages: [schedulePrompt(choices, session.fulfillment.type)],
       };
     }
-    if (
-      answer === "2" ||
-      /\b(PICKUP|DELIVERY|ENTREGA|RECOGER)\b/.test(answer)
-    ) {
+    if (option === "4") {
       return {
         session: {
           ...session,
@@ -371,7 +543,7 @@ function advanceCartConversation(session, input, config, now = new Date()) {
         messages: [fulfillmentPrompt()],
       };
     }
-    if (answer === "3" || /\b(CANCELAR|CANCELACION)\b/.test(answer)) {
+    if (option === "5") {
       return {
         session: { ...session, step: "CART_CANCEL_CONFIRMATION" },
         messages: [
@@ -379,7 +551,7 @@ function advanceCartConversation(session, input, config, now = new Date()) {
         ],
       };
     }
-    if (answer === "4" || answer === "NO") {
+    if (option === "6" || answer === "NO") {
       const restored = restoreUpdate(session);
       return {
         session: restored,
@@ -387,6 +559,101 @@ function advanceCartConversation(session, input, config, now = new Date()) {
       };
     }
     return { session, messages: [cartUpdateMenu(session)] };
+  }
+
+  if (session.step === "CART_UPDATE_PRODUCT") {
+    const index = Number(answer) - 1;
+    const choice = Number.isInteger(index)
+      ? session.updateProductChoices?.[index]
+      : null;
+    if (!choice) {
+      return {
+        session,
+        messages: [
+          cartProductUpdateMenu(
+            session,
+            session.updateAction,
+            session.updateProductChoices || [],
+          ),
+        ],
+      };
+    }
+    const verb =
+      session.updateAction === "ADD" ? "agregar" : "quitar";
+    return {
+      session: {
+        ...session,
+        step: "CART_UPDATE_QUANTITY",
+        updateProductChoice: choice,
+      },
+      messages: [
+        `¿Cuántas ${choice.promptName} deseas ${verb}?`,
+      ],
+    };
+  }
+
+  if (session.step === "CART_UPDATE_QUANTITY") {
+    if (!/^\d{1,3}$/.test(answer) || Number(answer) < 1) {
+      return {
+        session,
+        messages: ["Escribe una cantidad mayor a 0 usando números."],
+      };
+    }
+    const quantity = Number(answer);
+    const choice = session.updateProductChoice;
+    const currentQuantity = Number(choice.currentQuantity || 0);
+    if (
+      session.updateAction === "REMOVE" &&
+      quantity > currentQuantity
+    ) {
+      return {
+        session,
+        messages: [
+          `Tu pedido tiene ${currentQuantity} ${choice.promptName}. Escribe una cantidad menor o igual.`,
+        ],
+      };
+    }
+    const nextQuantity =
+      session.updateAction === "ADD"
+        ? currentQuantity + quantity
+        : currentQuantity - quantity;
+    const items = foodItems(session.cartOrder).map((item) => ({ ...item }));
+    if (choice.itemIndex >= 0) {
+      items[choice.itemIndex] = {
+        ...items[choice.itemIndex],
+        quantity: nextQuantity,
+      };
+    } else {
+      items.push({
+        receivedAt: session.cartOrder.summary.receivedAt,
+        orderId: session.orderId,
+        productId: choice.productId,
+        productName: choice.productName,
+        quantity: nextQuantity,
+        unitPrice: choice.unitPrice,
+        currency: session.cartOrder.summary.currency || "CAD",
+        lineTotal: nextQuantity * choice.unitPrice,
+        isLogistics: false,
+      });
+    }
+    const cartOrder = recalculateCartOrder(session, items);
+    const next = {
+      ...session,
+      step: "CART_UPDATE_CONFIRMATION",
+      cartOrder,
+    };
+    if (totalCartPieces(next) < config.minimumOrderPieces) {
+      return {
+        session,
+        messages: [
+          `El pedido debe conservar al menos ${config.minimumOrderPieces} piezas. Puedes quitar menos o cancelar todo el pedido.`,
+        ],
+      };
+    }
+    return {
+      session: next,
+      messages: [cartUpdateConfirmationPrompt(next)],
+    };
   }
 
   if (session.step === "CART_FULFILLMENT") {
