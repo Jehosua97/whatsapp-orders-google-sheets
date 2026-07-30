@@ -310,6 +310,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\enable-system.
 npm.cmd test
 ```
 
+To back up and clear all order data while preserving the catalog and
+administrative configuration:
+
+```powershell
+npm.cmd run reset-orders
+```
+
 The tests cover cart normalization, WhatsApp monetary units, spreadsheet row
 shape, the simplified kitchen view, pickup and delivery classification, and
 city fees.
