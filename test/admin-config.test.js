@@ -8,6 +8,7 @@ const path = require("node:path");
 const {
   AdminConfigStore,
   nextAvailableSchedule,
+  normalizeAutomation,
   normalizeCatalog,
   normalizeSchedules,
 } = require("../src/admin-config");
@@ -43,6 +44,43 @@ test("el catalogo administrativo alimenta la configuracion del bot", () => {
   assert.equal(
     new AdminConfigStore(file, baseConfig).getState().catalog[0].name,
     "Taco al pastor",
+  );
+});
+
+test("guarda los modos de automatizacion y sus listas de telefonos", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lacenaduria-"));
+  const file = path.join(directory, "admin.json");
+  const store = new AdminConfigStore(file, {
+    ...baseConfig,
+    automationAllowedPhones: new Set(["14378781645"]),
+    automationAllowedChatIds: new Set(),
+  });
+
+  assert.equal(store.getState().automation.mode, "TESTING");
+  assert.deepEqual(store.getState().automation.allowedPhones, [
+    "14378781645",
+  ]);
+
+  store.updateAutomation({
+    mode: "NORMAL",
+    allowedPhones: ["14378781645"],
+    blockedPhones: ["16470000000"],
+  });
+  const runtime = store.runtimeConfig();
+  assert.equal(runtime.automationMode, "NORMAL");
+  assert.equal(runtime.automationAllowedPhones.has("14378781645"), true);
+  assert.equal(runtime.automationBlockedPhones.has("16470000000"), true);
+});
+
+test("un numero no puede estar permitido y bloqueado", () => {
+  assert.throws(
+    () =>
+      normalizeAutomation({
+        mode: "TESTING",
+        allowedPhones: ["14378781645"],
+        blockedPhones: ["+1 (437) 878-1645"],
+      }),
+    /permitido y bloqueado/,
   );
 });
 

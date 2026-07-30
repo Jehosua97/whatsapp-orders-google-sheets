@@ -39,8 +39,12 @@
         </button>
         <button class="nav-item" data-view="rescheduling">
           <i data-lucide="calendar-sync"></i>
-          <span>Días no disponibles</span>
+          <span>Disponibilidad</span>
           <span class="nav-count" id="closureNavCount">0</span>
+        </button>
+        <button class="nav-item" data-view="automation">
+          <i data-lucide="shield"></i>
+          <span>Control del bot</span>
         </button>
       </nav>
 
@@ -66,6 +70,10 @@
                 Guardar catálogo
               </button>
             </div>
+          </div>
+          <div class="notice-bar">
+            <i data-lucide="info"></i>
+            <span>Recuerda tener sincronizado este catálogo con el catálogo nativo de WhatsApp Business para evitar confusiones de costos y disponibilidad.</span>
           </div>
           <div class="summary-strip" id="catalogSummary"></div>
           <div class="data-table catalog-table">
@@ -103,24 +111,33 @@
         <section class="view" id="reschedulingView">
           <div class="view-header">
             <div>
-              <p class="eyebrow">Excepciones del calendario</p>
-              <h1>Días no disponibles</h1>
+              <p class="eyebrow">Calendario operativo</p>
+              <h1>Disponibilidad por fecha</h1>
             </div>
             <button class="button danger-outline" id="newClosureButton">
               <i data-lucide="calendar-x"></i>
-              Suspender servicio en una fecha
+              Agregar excepción
             </button>
           </div>
 
           <div class="metrics" id="rescheduleMetrics"></div>
 
           <div class="section-heading">
-            <h2>Calendario operativo</h2>
+            <h2>Próximas fechas de servicio</h2>
           </div>
-          <div class="date-grid" id="upcomingDates"></div>
+          <div class="availability-table">
+            <div class="availability-head">
+              <span>Fecha</span>
+              <span>Pickup</span>
+              <span>Delivery</span>
+              <span>Pedidos</span>
+              <span></span>
+            </div>
+            <div class="availability-rows" id="upcomingDates"></div>
+          </div>
 
           <div class="section-heading with-action">
-            <h2>Suspensiones programadas</h2>
+            <h2>Excepciones activas</h2>
             <span id="closureCountLabel"></span>
           </div>
           <div class="closure-list" id="closureRows"></div>
@@ -138,6 +155,72 @@
             <div id="affectedRows" class="affected-list"></div>
           </section>
         </section>
+
+        <section class="view" id="automationView">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Seguridad y pruebas</p>
+              <h1>Control del bot</h1>
+            </div>
+            <button class="button primary" id="saveAutomationButton">
+              <i data-lucide="save"></i>
+              Guardar configuración
+            </button>
+          </div>
+
+          <section class="automation-mode-section">
+            <div>
+              <h2>Modo de respuesta</h2>
+              <p class="mode-description" id="automationModeDescription"></p>
+            </div>
+            <div class="segmented-control" id="automationMode" role="radiogroup" aria-label="Modo de respuesta">
+              <button type="button" data-mode="NORMAL" role="radio">
+                <i data-lucide="radio-tower"></i>
+                Normal
+              </button>
+              <button type="button" data-mode="TESTING" role="radio">
+                <i data-lucide="flask-conical"></i>
+                Pruebas
+              </button>
+            </div>
+          </section>
+
+          <div class="phone-control-grid">
+            <section class="phone-list-section">
+              <div class="phone-list-heading">
+                <div>
+                  <p class="eyebrow">Modo pruebas</p>
+                  <h2>Números permitidos</h2>
+                </div>
+                <span class="list-count" id="allowedCount">0</span>
+              </div>
+              <form class="phone-entry-form" id="allowedPhoneForm">
+                <input type="tel" id="allowedPhoneInput" inputmode="tel" autocomplete="off" placeholder="+1 437 000 0000" aria-label="Número permitido" />
+                <button class="icon-button" type="submit" title="Agregar número permitido">
+                  <i data-lucide="plus"></i>
+                </button>
+              </form>
+              <div class="phone-list" id="allowedPhoneRows"></div>
+            </section>
+
+            <section class="phone-list-section blocked-list-section">
+              <div class="phone-list-heading">
+                <div>
+                  <p class="eyebrow">Lista negra</p>
+                  <h2>Números bloqueados</h2>
+                </div>
+                <span class="list-count blocked" id="blockedCount">0</span>
+              </div>
+              <form class="phone-entry-form" id="blockedPhoneForm">
+                <input type="tel" id="blockedPhoneInput" inputmode="tel" autocomplete="off" placeholder="+1 647 000 0000" aria-label="Número bloqueado" />
+                <button class="icon-button danger-icon" type="submit" title="Bloquear número">
+                  <i data-lucide="plus"></i>
+                </button>
+              </form>
+              <div class="phone-list" id="blockedPhoneRows"></div>
+            </section>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -145,8 +228,8 @@
       <form method="dialog" id="closureForm">
         <div class="dialog-header">
           <div>
-            <p class="eyebrow">Cambio excepcional</p>
-            <h2>Suspender servicio</h2>
+            <p class="eyebrow">Excepción de fecha</p>
+            <h2>Marcar como no disponible</h2>
           </div>
           <button class="icon-button" value="cancel" title="Cerrar">
             <i data-lucide="x"></i>
@@ -157,7 +240,7 @@
           <input type="date" id="closureDate" required />
         </label>
         <fieldset>
-          <legend>Servicios que no estarán disponibles</legend>
+          <legend>Servicios no disponibles</legend>
           <label class="check-line">
             <input type="checkbox" id="closePickup" checked />
             <span>Pickup</span>
@@ -180,7 +263,7 @@
           <button class="button secondary" value="cancel">Cancelar</button>
           <button class="button danger" id="confirmClosureButton" value="default">
             <i data-lucide="calendar-x"></i>
-            Guardar suspensión
+            Guardar cambios
           </button>
         </div>
       </form>

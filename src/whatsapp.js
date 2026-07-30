@@ -81,15 +81,19 @@ async function isAllowedMessage({
   chatId,
   allowedChatIds,
   allowedPhones,
+  blockedPhones,
+  mode = "TESTING",
 }) {
-  if (isAllowedChat(chatId, allowedChatIds)) return true;
-
   const phones = allowedPhones instanceof Set ? allowedPhones : new Set();
+  const blocked =
+    blockedPhones instanceof Set ? blockedPhones : new Set();
   const directPhone = phoneFromWhatsAppId(chatId);
-  if (directPhone && phones.has(directPhone)) return true;
-  if (!String(chatId).endsWith("@lid")) return false;
-
-  const resolvedPhone = await resolvePhoneNumber(client, chatId);
+  const resolvedPhone = String(chatId).endsWith("@lid")
+    ? await resolvePhoneNumber(client, chatId)
+    : directPhone;
+  if (resolvedPhone && blocked.has(resolvedPhone)) return false;
+  if (String(mode).toUpperCase() === "NORMAL") return true;
+  if (isAllowedChat(chatId, allowedChatIds)) return true;
   return Boolean(resolvedPhone && phones.has(resolvedPhone));
 }
 
@@ -405,7 +409,6 @@ function createWhatsAppClient({
 }) {
   const qrFile = path.resolve("whatsapp-qr.png");
   const messageQueues = new Map();
-  const authorizedChatIds = new Set(config.automationAllowedChatIds);
   const conversationState =
     suppliedConversationState ||
     new ConversationStateStore(config.conversationStateFile);
@@ -481,14 +484,17 @@ function createWhatsAppClient({
       const allowed = await isAllowedMessage({
         client,
         chatId: message.from,
-        allowedChatIds: authorizedChatIds,
-        allowedPhones: config.automationAllowedPhones,
+        allowedChatIds: runtimeConfig.automationAllowedChatIds,
+        allowedPhones: runtimeConfig.automationAllowedPhones,
+        blockedPhones: runtimeConfig.automationBlockedPhones,
+        mode: runtimeConfig.automationMode,
       });
       if (!allowed) {
-        logger.log(`Mensaje ignorado por lista permitida: ${message.from}`);
+        logger.log(
+          `Mensaje ignorado por la política de automatización: ${message.from}`,
+        );
         return;
       }
-      authorizedChatIds.add(message.from);
 
       if (message.type === "order") {
         logger.log(`Carrito recibido: ${message.orderId || "sin ID"}`);

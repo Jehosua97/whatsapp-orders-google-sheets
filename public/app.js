@@ -24,6 +24,8 @@ const elements = {
   affectedRows: document.querySelector("#affectedRows"),
   affectedSection: document.querySelector("#affectedSection"),
   affectedTitle: document.querySelector("#affectedTitle"),
+  allowedPhoneRows: document.querySelector("#allowedPhoneRows"),
+  blockedPhoneRows: document.querySelector("#blockedPhoneRows"),
   closureDialog: document.querySelector("#closureDialog"),
   closureForm: document.querySelector("#closureForm"),
   toast: document.querySelector("#toast"),
@@ -223,7 +225,7 @@ function renderRescheduling() {
   ).length;
   document.querySelector("#rescheduleMetrics").innerHTML = [
     ["Fechas disponibles", availableDates],
-    ["Suspensiones", dashboard.closures.length],
+    ["Excepciones", dashboard.closures.length],
     ["Pedidos por atender", affectedTotal],
   ]
     .map(
@@ -237,42 +239,34 @@ function renderRescheduling() {
     .map((date) => {
       const closed = !date.pickupAvailable || !date.deliveryAvailable;
       return `
-        <article class="date-item ${closed ? "closed" : ""}">
-          <div class="date-title">
-            <div>
-              <strong>${escapeHtml(date.dateLabel)}</strong>
-              <span>${escapeHtml(date.name)}</span>
-            </div>
-            <span class="order-count" title="Pedidos confirmados">${date.confirmedOrders}</span>
+        <div class="availability-row ${closed ? "has-exception" : ""}">
+          <div class="availability-date">
+            <strong>${escapeHtml(date.dateLabel)}</strong>
+            <span>${escapeHtml(date.date)}</span>
           </div>
-          <div class="service-statuses">
-            <div class="service-status">
-              <span>Pickup</span>
-              <span class="status-label ${date.pickupAvailable ? "available" : "unavailable"}">
-                <i data-lucide="${date.pickupAvailable ? "check" : "x"}"></i>
-                ${date.pickupAvailable ? escapeHtml(date.pickupWindow) : "Cerrado"}
-              </span>
-            </div>
-            <div class="service-status">
-              <span>Delivery</span>
-              <span class="status-label ${date.deliveryAvailable ? "available" : "unavailable"}">
-                <i data-lucide="${date.deliveryAvailable ? "check" : "x"}"></i>
-                ${date.deliveryAvailable ? escapeHtml(date.deliveryWindow) : "Cerrado"}
-              </span>
-            </div>
+          <span class="availability-status ${date.pickupAvailable ? "available" : "unavailable"}" data-service="Pickup">
+            <i data-lucide="${date.pickupAvailable ? "check-circle-2" : "x-circle"}"></i>
+            ${date.pickupAvailable ? escapeHtml(date.pickupWindow) : "No disponible"}
+          </span>
+          <span class="availability-status ${date.deliveryAvailable ? "available" : "unavailable"}" data-service="Delivery">
+            <i data-lucide="${date.deliveryAvailable ? "check-circle-2" : "x-circle"}"></i>
+            ${date.deliveryAvailable ? escapeHtml(date.deliveryWindow) : "No disponible"}
+          </span>
+          <div class="availability-orders">
+            <strong>${date.confirmedOrders}</strong>
+            <span>confirmados</span>
           </div>
-          <button class="button small ${closed ? "secondary" : "danger-outline"} close-date" data-date="${date.date}">
-            <i data-lucide="calendar-x"></i>
-            ${closed ? "Editar suspensión" : "Suspender servicio"}
+          <button class="icon-button close-date" data-date="${date.date}" title="${closed ? "Editar disponibilidad" : "Agregar excepción"}">
+            <i data-lucide="${closed ? "calendar-cog" : "calendar-minus-2"}"></i>
           </button>
-        </article>`;
+        </div>`;
     })
     .join("");
 
   document.querySelector("#closureNavCount").textContent =
     dashboard.closures.length;
   document.querySelector("#closureCountLabel").textContent =
-    `${dashboard.closures.length} activos`;
+    `${dashboard.closures.length} ${dashboard.closures.length === 1 ? "activa" : "activas"}`;
   elements.closureRows.innerHTML = dashboard.closures.length
     ? dashboard.closures
         .map(
@@ -309,6 +303,59 @@ function renderRescheduling() {
   icons();
 }
 
+function formatPhone(phone) {
+  const digits = String(phone || "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+1 ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+  }
+  return `+${digits}`;
+}
+
+function phoneRows(phones, list) {
+  return phones.length
+    ? phones
+        .map(
+          (phone) => `
+            <div class="phone-row">
+              <span class="phone-icon">
+                <i data-lucide="${list === "blocked" ? "shield-ban" : "user-check"}"></i>
+              </span>
+              <strong>${escapeHtml(formatPhone(phone))}</strong>
+              <button class="icon-button danger-icon remove-phone" type="button" data-list="${list}" data-phone="${escapeHtml(phone)}" title="Quitar número">
+                <i data-lucide="trash-2"></i>
+              </button>
+            </div>`,
+        )
+        .join("")
+    : `<div class="phone-empty">${list === "blocked" ? "No hay números bloqueados." : "No hay números permitidos."}</div>`;
+}
+
+function renderAutomation() {
+  const automation = state.dashboard.automation;
+  document.querySelectorAll("#automationMode [data-mode]").forEach((button) => {
+    const active = button.dataset.mode === automation.mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-checked", String(active));
+  });
+  document.querySelector("#automationModeDescription").textContent =
+    automation.mode === "TESTING"
+      ? "El bot responde únicamente a los números permitidos."
+      : "El bot responde a todos, excepto a los números bloqueados.";
+  document.querySelector("#allowedCount").textContent =
+    automation.allowedPhones.length;
+  document.querySelector("#blockedCount").textContent =
+    automation.blockedPhones.length;
+  elements.allowedPhoneRows.innerHTML = phoneRows(
+    automation.allowedPhones,
+    "allowed",
+  );
+  elements.blockedPhoneRows.innerHTML = phoneRows(
+    automation.blockedPhones,
+    "blocked",
+  );
+  icons();
+}
+
 async function renderAffected(closureId) {
   const data = await api(`/api/closures/${closureId}/affected`);
   state.selectedClosureId = closureId;
@@ -332,9 +379,9 @@ async function renderAffected(closureId) {
                 <i data-lucide="arrow-right"></i>
                 <span>${order.next ? escapeHtml(order.next.date) : "Sin fecha"}</span>
               </div>
-              <button class="button small primary notify-order" data-order-id="${escapeHtml(order.orderId)}" ${!order.canNotify || !order.next ? "disabled" : ""} title="${!order.canNotify ? "Fuera de la lista de pruebas" : "Enviar notificación y reprogramar"}">
+              <button class="button small primary notify-order" data-order-id="${escapeHtml(order.orderId)}" ${!order.canNotify || !order.next ? "disabled" : ""} title="${!order.canNotify ? "No autorizado por el control del bot" : "Enviar notificación y reprogramar"}">
                 <i data-lucide="send"></i>
-                ${order.canNotify ? "Notificar y reprogramar" : "Bloqueado en pruebas"}
+                ${order.canNotify ? "Notificar y reprogramar" : "No autorizado"}
               </button>
             </div>`,
         )
@@ -367,6 +414,7 @@ function renderAll() {
   renderCatalog();
   renderSchedules();
   renderRescheduling();
+  renderAutomation();
 }
 
 async function loadDashboard(showMessage = false) {
@@ -547,7 +595,7 @@ elements.closureRows.addEventListener("click", async (event) => {
   if (!removeButton) return;
   if (
     !window.confirm(
-      "¿Volver a habilitar pickup y delivery en esta fecha?",
+      "¿Volver a habilitar los servicios marcados en esta fecha?",
     )
   ) {
     return;
@@ -558,7 +606,7 @@ elements.closureRows.addEventListener("click", async (event) => {
     });
     elements.affectedSection.hidden = true;
     await loadDashboard();
-    showToast("Los servicios de esta fecha volvieron a estar disponibles.");
+    showToast("La excepción fue eliminada.");
   } catch (error) {
     showToast(error.message, true);
   }
@@ -592,6 +640,90 @@ elements.affectedRows.addEventListener("click", async (event) => {
 document.querySelector("#closeAffectedButton").addEventListener("click", () => {
   elements.affectedSection.hidden = true;
   state.selectedClosureId = "";
+});
+
+document.querySelector("#automationMode").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-mode]");
+  if (!button) return;
+  state.dashboard.automation.mode = button.dataset.mode;
+  state.dashboard.testMode = button.dataset.mode === "TESTING";
+  document.querySelector("#testBanner").hidden = !state.dashboard.testMode;
+  renderAutomation();
+});
+
+function addPhone(list, input) {
+  const phone = input.value.replace(/\D/g, "");
+  if (phone.length < 10 || phone.length > 15) {
+    showToast(
+      "Incluye el código de país y escribe entre 10 y 15 dígitos.",
+      true,
+    );
+    return;
+  }
+  const automation = state.dashboard.automation;
+  const target =
+    list === "blocked"
+      ? automation.blockedPhones
+      : automation.allowedPhones;
+  const opposite =
+    list === "blocked"
+      ? automation.allowedPhones
+      : automation.blockedPhones;
+  if (opposite.includes(phone)) {
+    showToast(
+      "Quita primero este número de la otra lista.",
+      true,
+    );
+    return;
+  }
+  if (!target.includes(phone)) target.push(phone);
+  input.value = "";
+  renderAutomation();
+}
+
+document.querySelector("#allowedPhoneForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  addPhone("allowed", document.querySelector("#allowedPhoneInput"));
+});
+
+document.querySelector("#blockedPhoneForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  addPhone("blocked", document.querySelector("#blockedPhoneInput"));
+});
+
+document.querySelector("#automationView").addEventListener("click", (event) => {
+  const button = event.target.closest(".remove-phone");
+  if (!button) return;
+  const key =
+    button.dataset.list === "blocked"
+      ? "blockedPhones"
+      : "allowedPhones";
+  state.dashboard.automation[key] =
+    state.dashboard.automation[key].filter(
+      (phone) => phone !== button.dataset.phone,
+    );
+  renderAutomation();
+});
+
+document.querySelector("#saveAutomationButton").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  setLoading(button, true);
+  try {
+    const result = await api("/api/automation", {
+      method: "PUT",
+      body: JSON.stringify({
+        automation: state.dashboard.automation,
+      }),
+    });
+    state.dashboard.automation = result.automation;
+    state.dashboard.testMode = result.automation.mode === "TESTING";
+    renderAll();
+    showToast("Control del bot guardado y aplicado.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    setLoading(button, false);
+  }
 });
 
 document.querySelector("#refreshButton").addEventListener("click", () => {

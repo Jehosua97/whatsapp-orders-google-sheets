@@ -172,21 +172,18 @@ digits-only format, the process displays an eight-character pairing code.
 
 ### Safe test mode
 
-Automation is disabled by default. Add only approved test chat IDs:
-
-```dotenv
-WHATSAPP_AUTOMATION_ALLOWLIST=123456789@lid
-```
-
-Messages and carts from every other chat are ignored. Multiple test IDs can be
-separated by commas.
-
-Approved phone numbers can also be listed without symbols. The bot resolves
-WhatsApp LIDs before authorizing them:
+The panel starts in `Testing` mode. Approved phone numbers can be seeded
+without symbols through the environment:
 
 ```dotenv
 WHATSAPP_AUTOMATION_ALLOWED_PHONES=14165550123,16475550123
 ```
+
+The `Control del bot` view is then the source of truth:
+
+- `Testing` responds only to numbers in the allowed list.
+- `Normal` responds to every customer except numbers in the blocked list.
+- Blocked numbers never receive automated replies in either mode.
 
 ### Conversational order flow
 
@@ -251,10 +248,11 @@ The panel supports:
 - Up to ten catalog products with editable names, kitchen labels, prices,
   icons, and availability.
 - Weekly pickup and delivery availability with independent time windows.
-- Date-specific service closures.
+- Compact date availability and date-specific exceptions.
 - Affected-order review with the next immediate available date.
-- A test-allowlist-protected `Notify and reschedule` action that sends the
-  WhatsApp notice and updates Google Sheets and conversation state.
+- Testing and normal automation modes with allowed and blocked phone lists.
+- A policy-protected `Notify and reschedule` action that sends the WhatsApp
+  notice and updates Google Sheets and conversation state.
 
 Runtime changes are stored in `.data/admin-config.json`, which is excluded
 from Git. New WhatsApp messages read this configuration immediately. The

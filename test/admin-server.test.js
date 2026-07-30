@@ -89,3 +89,27 @@ test("bloquea notificaciones fuera de la lista de pruebas", () => {
     false,
   );
 });
+
+test("en modo normal permite todos excepto la lista negra", () => {
+  const normalConfig = {
+    automationMode: "NORMAL",
+    automationAllowedChatIds: new Set(),
+    automationAllowedPhones: new Set(),
+    automationBlockedPhones: new Set(["19050000000"]),
+  };
+
+  assert.equal(
+    canNotifyOrder(
+      { phone: "14370000000", chatId: "cliente@lid" },
+      normalConfig,
+    ),
+    true,
+  );
+  assert.equal(
+    canNotifyOrder(
+      { phone: "19050000000", chatId: "bloqueado@lid" },
+      normalConfig,
+    ),
+    false,
+  );
+});

@@ -103,6 +103,43 @@ test("autoriza solamente telefonos configurados aunque WhatsApp use LID", async 
   );
 });
 
+test("el modo normal responde a todos excepto numeros bloqueados", async () => {
+  const client = {
+    getContactLidAndPhone: async ([chatId]) => [
+      {
+        lid: chatId,
+        pn:
+          chatId === "blocked@lid"
+            ? "15559999999@c.us"
+            : "15550001111@c.us",
+      },
+    ],
+  };
+
+  assert.equal(
+    await isAllowedMessage({
+      client,
+      chatId: "customer@lid",
+      allowedChatIds: new Set(),
+      allowedPhones: new Set(),
+      blockedPhones: new Set(["15559999999"]),
+      mode: "NORMAL",
+    }),
+    true,
+  );
+  assert.equal(
+    await isAllowedMessage({
+      client,
+      chatId: "blocked@lid",
+      allowedChatIds: new Set(),
+      allowedPhones: new Set(["15559999999"]),
+      blockedPhones: new Set(["15559999999"]),
+      mode: "NORMAL",
+    }),
+    false,
+  );
+});
+
 test("la respuesta de ubicacion no pide confirmar la ciudad", () => {
   const reply = locationReceivedReply();
   assert.match(reply, /recibimos tu ubicacion/i);

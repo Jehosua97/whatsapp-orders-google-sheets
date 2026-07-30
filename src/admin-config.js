@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const MAX_PRODUCTS = 10;
 const SERVICE_TYPES = ["PICKUP", "DELIVERY"];
+const AUTOMATION_MODES = ["NORMAL", "TESTING"];
 const WEEKDAY_NAMES = [
   "Domingo",
   "Lunes",
@@ -29,9 +30,46 @@ function slug(value) {
     .slice(0, 48);
 }
 
+function phoneList(values) {
+  return [
+    ...new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value || "").replace(/\D/g, ""))
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function normalizeAutomation(automation = {}) {
+  const mode = String(automation.mode || "").toUpperCase();
+  if (!AUTOMATION_MODES.includes(mode)) {
+    throw new Error("El modo de automatización no es válido.");
+  }
+  const allowedPhones = phoneList(automation.allowedPhones);
+  const blockedPhones = phoneList(automation.blockedPhones);
+  const invalid = [...allowedPhones, ...blockedPhones].find(
+    (phone) => phone.length < 10 || phone.length > 15,
+  );
+  if (invalid) {
+    throw new Error(
+      "Los números deben incluir código de país y tener entre 10 y 15 dígitos.",
+    );
+  }
+  const blocked = new Set(blockedPhones);
+  if (allowedPhones.some((phone) => blocked.has(phone))) {
+    throw new Error(
+      "Un número no puede estar permitido y bloqueado al mismo tiempo.",
+    );
+  }
+  return { mode, allowedPhones, blockedPhones };
+}
+
 function defaultState(baseConfig) {
+  const configuredAllowedPhones = [
+    ...(baseConfig.automationAllowedPhones || []),
+  ];
   return {
-    version: 1,
+    version: 2,
     catalog: [
       {
         id: "chocolate",
@@ -85,6 +123,11 @@ function defaultState(baseConfig) {
     ],
     closures: [],
     notifications: [],
+    automation: {
+      mode: "TESTING",
+      allowedPhones: configuredAllowedPhones,
+      blockedPhones: [],
+    },
     updatedAt: new Date().toISOString(),
   };
 }
@@ -288,6 +331,7 @@ class AdminConfigStore {
       return {
         ...defaults,
         ...parsed,
+        version: 2,
         catalog: normalizeCatalog(
           repairCatalogEncoding(parsed.catalog, defaults.catalog),
         ),
@@ -298,6 +342,9 @@ class AdminConfigStore {
         notifications: Array.isArray(parsed.notifications)
           ? parsed.notifications
           : [],
+        automation: normalizeAutomation(
+          parsed.automation || defaults.automation,
+        ),
       };
     } catch {
       const state = defaultState(this.baseConfig);
@@ -333,6 +380,10 @@ class AdminConfigStore {
       menuPrices: Object.fromEntries(
         state.catalog.map((product) => [product.id, product.price]),
       ),
+      automationMode: state.automation.mode,
+      automationAllowedChatIds: new Set(),
+      automationAllowedPhones: new Set(state.automation.allowedPhones),
+      automationBlockedPhones: new Set(state.automation.blockedPhones),
     };
   }
 
@@ -347,6 +398,13 @@ class AdminConfigStore {
     return this.persist({
       ...this.state,
       schedules: normalizeSchedules(schedules),
+    });
+  }
+
+  updateAutomation(automation) {
+    return this.persist({
+      ...this.state,
+      automation: normalizeAutomation(automation),
     });
   }
 
@@ -401,6 +459,7 @@ class AdminConfigStore {
 
 module.exports = {
   AdminConfigStore,
+  AUTOMATION_MODES,
   MAX_PRODUCTS,
   SERVICE_TYPES,
   WEEKDAY_NAMES,
@@ -410,6 +469,7 @@ module.exports = {
   isServiceClosed,
   nextAvailableSchedule,
   normalizeCatalog,
+  normalizeAutomation,
   normalizeSchedules,
   repairCatalogEncoding,
   repairScheduleEncoding,

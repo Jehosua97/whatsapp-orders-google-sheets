@@ -49,10 +49,12 @@ function orderService(order) {
 function canNotifyOrder(order, config) {
   const chatId = String(order.chatId || "");
   const phone = String(order.phone || "").replace(/\D/g, "");
+  if (!chatId) return false;
+  if (config.automationBlockedPhones?.has(phone)) return false;
+  if (config.automationMode === "NORMAL") return true;
   return Boolean(
-    chatId &&
-      (config.automationAllowedChatIds.has(chatId) ||
-        config.automationAllowedPhones.has(phone)),
+    config.automationAllowedChatIds?.has(chatId) ||
+      config.automationAllowedPhones?.has(phone),
   );
 }
 
@@ -168,6 +170,7 @@ function createAdminServer({
   app.get("/api/dashboard", async (_request, response, next) => {
     try {
       const state = configStore.getState();
+      const runtimeConfig = configStore.runtimeConfig();
       const orders = await store.listOrders();
       const closures = state.closures.map((closure) => ({
         ...closure,
@@ -176,7 +179,7 @@ function createAdminServer({
           orders,
           closure,
           state,
-          config,
+          runtimeConfig,
         ).length,
       }));
       response.json({
@@ -184,10 +187,9 @@ function createAdminServer({
         schedules: state.schedules,
         closures,
         notifications: state.notifications.slice(-50).reverse(),
+        automation: state.automation,
         upcomingDates: upcomingDates(state, orders),
-        testMode:
-          config.automationAllowedChatIds.size > 0 ||
-          config.automationAllowedPhones.size > 0,
+        testMode: state.automation.mode === "TESTING",
         whatsappStatus: whatsapp.lacenaduriaStatus || "CONNECTING",
         today: torontoToday(),
       });
@@ -214,10 +216,20 @@ function createAdminServer({
     }
   });
 
+  app.put("/api/automation", (request, response, next) => {
+    try {
+      const state = configStore.updateAutomation(request.body.automation);
+      response.json({ automation: state.automation });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/closures", async (request, response, next) => {
     try {
       const closure = configStore.upsertClosure(request.body);
       const state = configStore.getState();
+      const runtimeConfig = configStore.runtimeConfig();
       const orders = await store.listOrders();
       response.status(201).json({
         closure,
@@ -225,7 +237,7 @@ function createAdminServer({
           orders,
           closure,
           state,
-          config,
+          runtimeConfig,
         ),
       });
     } catch (error) {
@@ -247,6 +259,7 @@ function createAdminServer({
     async (request, response, next) => {
       try {
         const state = configStore.getState();
+        const runtimeConfig = configStore.runtimeConfig();
         const closure = state.closures.find(
           (item) => item.id === request.params.closureId,
         );
@@ -262,7 +275,7 @@ function createAdminServer({
             orders,
             closure,
             state,
-            config,
+            runtimeConfig,
           ),
         });
       } catch (error) {
@@ -276,6 +289,7 @@ function createAdminServer({
     async (request, response, next) => {
       try {
         const state = configStore.getState();
+        const runtimeConfig = configStore.runtimeConfig();
         const closure = state.closures.find(
           (item) => item.id === request.params.closureId,
         );
@@ -295,10 +309,10 @@ function createAdminServer({
             error: "El pedido ya no está afectado por este cierre.",
           });
         }
-        if (!canNotifyOrder(order, config)) {
+        if (!canNotifyOrder(order, runtimeConfig)) {
           return response.status(403).json({
             error:
-              "Este cliente no pertenece a la lista de pruebas y no recibirá mensajes automáticos.",
+              "La política de automatización no permite enviar mensajes a este cliente.",
           });
         }
         const serviceType = orderService(order);
