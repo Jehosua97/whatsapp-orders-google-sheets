@@ -3,14 +3,14 @@ $ErrorActionPreference = "Stop"
 $taskName = "La Cenaduria WhatsApp Bot"
 $watchdogTaskName = "La Cenaduria Bot Watchdog"
 $projectDirectory = Split-Path -Parent $PSScriptRoot
-$launcher = Join-Path $PSScriptRoot "start-bot.cmd"
-$watchdog = Join-Path $PSScriptRoot "watchdog.ps1"
+$launcher = Join-Path $PSScriptRoot "start-bot-hidden.vbs"
+$watchdog = Join-Path $PSScriptRoot "watchdog-hidden.vbs"
 $disabledMarker = Join-Path $projectDirectory ".data\system-disabled"
 $userId = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 $action = New-ScheduledTaskAction `
-  -Execute "$env:SystemRoot\System32\cmd.exe" `
-  -Argument "/d /s /c `"`"$launcher`"`"" `
+  -Execute "$env:SystemRoot\System32\wscript.exe" `
+  -Argument "`"$launcher`"" `
   -WorkingDirectory $projectDirectory
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
 $principal = New-ScheduledTaskPrincipal `
@@ -42,8 +42,8 @@ if (Test-Path $disabledMarker) {
 }
 
 $watchdogAction = New-ScheduledTaskAction `
-  -Execute "powershell.exe" `
-  -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$watchdog`"" `
+  -Execute "$env:SystemRoot\System32\wscript.exe" `
+  -Argument "`"$watchdog`"" `
   -WorkingDirectory $projectDirectory
 $watchdogTrigger = New-ScheduledTaskTrigger `
   -Once `
