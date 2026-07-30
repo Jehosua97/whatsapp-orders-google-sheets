@@ -293,6 +293,27 @@ The tests cover cart normalization, WhatsApp monetary units, spreadsheet row
 shape, the simplified kitchen view, pickup and delivery classification, and
 city fees.
 
+## Windows automatic startup
+
+The bot can run in the background while Windows is locked. To start it
+automatically after every reboot, install the included scheduled task:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows-task.ps1
+```
+
+The task starts when the current Windows user signs in, keeps running while
+the computer is locked, and retries one minute after an unexpected exit.
+Standard output and errors are appended to `bot.stdout.log` and
+`bot.stderr.log`.
+
+Windows must remain powered on, awake, and connected to the Internet. To
+remove the task:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall-windows-task.ps1
+```
+
 ## Security
 
 - `.env`, `.secrets/`, WhatsApp authentication state, QR images, and logs are
