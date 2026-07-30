@@ -283,6 +283,14 @@ answer in the follow-up flow determines the final service and fee.
 customer reply and in the kitchen worksheet notes.
 `PICKUP_ADDRESS` is shown in pickup summaries and stored with the order.
 
+### Pause automation for one customer
+
+From the La Cenaduria WhatsApp account, send `STOP BOT` inside a direct
+customer conversation to pause automatic replies only for that chat. Send
+`CONTINUE BOT` in the same conversation to resume them. Customer messages
+cannot activate these commands, and the paused state survives application
+restarts.
+
 ## Testing
 
 ```powershell

@@ -69,6 +69,9 @@ function readConfig() {
     autoReplyStateFile: path.resolve(
       process.env.AUTO_REPLY_STATE_FILE || ".data/auto-reply-state.json",
     ),
+    botPauseStateFile: path.resolve(
+      process.env.BOT_PAUSE_STATE_FILE || ".data/bot-pause-state.json",
+    ),
     conversationStateFile: path.resolve(
       process.env.CONVERSATION_STATE_FILE ||
         ".data/conversation-state.json",

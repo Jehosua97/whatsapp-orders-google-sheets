@@ -4,6 +4,7 @@ const path = require("node:path");
 const QRCode = require("qrcode");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
+const { BotPauseState, botControlCommand } = require("./bot-pause-state");
 const { isAllowedChat } = require("./auto-reply-state");
 const {
   advanceConversation,
@@ -60,6 +61,26 @@ function phoneFromWhatsAppId(value) {
 
 function isDirectChatId(value) {
   return /@(?:c\.us|s\.whatsapp\.net|lid)$/i.test(String(value || ""));
+}
+
+function handleBotControlMessage({
+  message,
+  pauseState,
+  logger = console,
+}) {
+  if (!message?.fromMe) return "";
+  const command = botControlCommand(message.body);
+  const chatId = String(message.to || "");
+  if (!command || !isDirectChatId(chatId)) return "";
+
+  if (command === "STOP") {
+    pauseState.pause(chatId);
+    logger.log(`Bot pausado manualmente para: ${chatId}`);
+  } else {
+    pauseState.resume(chatId);
+    logger.log(`Bot reactivado manualmente para: ${chatId}`);
+  }
+  return command;
 }
 
 async function resolvePhoneNumber(client, chatId, contact) {
@@ -417,6 +438,7 @@ function createWhatsAppClient({
   config,
   configProvider = () => config,
   conversationState: suppliedConversationState,
+  pauseState: suppliedPauseState,
   store,
   logger = console,
 }) {
@@ -425,6 +447,8 @@ function createWhatsAppClient({
   const conversationState =
     suppliedConversationState ||
     new ConversationStateStore(config.conversationStateFile);
+  const pauseState =
+    suppliedPauseState || new BotPauseState(config.botPauseStateFile);
   const client = new Client({
     authStrategy: new LocalAuth({
       clientId: "lacenaduria",
@@ -505,6 +529,13 @@ function createWhatsAppClient({
       if (!allowed) {
         logger.log(
           `Mensaje ignorado por la política de automatización: ${message.from}`,
+        );
+        return;
+      }
+
+      if (pauseState.isPaused(message.from)) {
+        logger.log(
+          `Mensaje ignorado porque el bot esta pausado para: ${message.from}`,
         );
         return;
       }
@@ -604,6 +635,14 @@ function createWhatsAppClient({
     });
   });
 
+  client.on("message_create", (message) => {
+    try {
+      handleBotControlMessage({ message, pauseState, logger });
+    } catch (error) {
+      logger.error("No se pudo cambiar la pausa del bot:", error);
+    }
+  });
+
   return client;
 }
 
@@ -611,6 +650,7 @@ module.exports = {
   addGrandTotal,
   createWhatsAppClient,
   customerIdentity,
+  handleBotControlMessage,
   handleConversationMessage,
   handleCartConversationMessage,
   handleFulfillmentText,

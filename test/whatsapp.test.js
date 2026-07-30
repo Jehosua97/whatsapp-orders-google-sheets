@@ -8,6 +8,7 @@ const {
   ConversationStateStore,
 } = require("../src/conversation-flow");
 const {
+  handleBotControlMessage,
   handleConversationMessage,
   handleLocation,
   isAllowedMessage,
@@ -37,6 +38,57 @@ test("solo reconoce conversaciones individuales como chats directos", () => {
   assert.equal(isDirectChatId("120363000000000000@g.us"), false);
   assert.equal(isDirectChatId("status@broadcast"), false);
   assert.equal(isDirectChatId("12345@newsletter"), false);
+});
+
+test("solo el negocio puede pausar y reactivar un chat individual", () => {
+  const paused = new Set();
+  const pauseState = {
+    pause: (chatId) => paused.add(chatId),
+    resume: (chatId) => paused.delete(chatId),
+  };
+  const logger = { log() {} };
+
+  assert.equal(
+    handleBotControlMessage({
+      message: {
+        fromMe: false,
+        from: "customer@lid",
+        body: "STOP BOT",
+      },
+      pauseState,
+      logger,
+    }),
+    "",
+  );
+  assert.equal(paused.size, 0);
+
+  assert.equal(
+    handleBotControlMessage({
+      message: {
+        fromMe: true,
+        to: "customer@lid",
+        body: "STOP BOT",
+      },
+      pauseState,
+      logger,
+    }),
+    "STOP",
+  );
+  assert.equal(paused.has("customer@lid"), true);
+
+  assert.equal(
+    handleBotControlMessage({
+      message: {
+        fromMe: true,
+        to: "customer@lid",
+        body: "CONTINUE BOT",
+      },
+      pauseState,
+      logger,
+    }),
+    "CONTINUE",
+  );
+  assert.equal(paused.has("customer@lid"), false);
 });
 
 test("resuelve el numero asociado a un chat LID", async () => {
