@@ -181,9 +181,13 @@ WHATSAPP_AUTOMATION_ALLOWED_PHONES=14165550123,16475550123
 
 The `Control del bot` view is then the source of truth:
 
-- `Testing` responds only to numbers in the allowed list.
-- `Normal` responds to every customer except numbers in the blocked list.
+- `Solo pruebas` responds only to numbers in the allowed list.
+- `Producción` responds to every customer except numbers in the blocked list.
 - Blocked numbers never receive automated replies in either mode.
+
+The panel always shows the currently active mode separately from an unsaved
+selection. Switching to production requires `Guardar y aplicar` and an
+explicit confirmation.
 
 ### Conversational order flow
 

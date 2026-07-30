@@ -356,6 +356,12 @@ h2 {
   font-weight: 600;
 }
 
+.test-banner.production {
+  border-color: #e4c786;
+  background: var(--amber-soft);
+  color: #754d0d;
+}
+
 .summary-strip,
 .metrics {
   display: grid;
@@ -651,6 +657,57 @@ select:focus {
   border-bottom: 1px solid var(--line);
 }
 
+.automation-active-status {
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--green);
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.automation-active-status.production {
+  border-left-color: var(--amber);
+  background: var(--amber-soft);
+  color: #754d0d;
+}
+
+.active-status-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.active-status-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.automation-active-status > div > span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.automation-active-status strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 18px;
+}
+
+.automation-active-status p {
+  font-size: 12px;
+}
+
 .mode-description {
   margin-top: 6px;
   color: var(--muted);
@@ -659,7 +716,7 @@ select:focus {
 
 .segmented-control {
   display: inline-grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  grid-template-columns: repeat(2, minmax(175px, 1fr));
   padding: 3px;
   border: 1px solid #cfd6d1;
   border-radius: 6px;
@@ -667,10 +724,10 @@ select:focus {
 }
 
 .segmented-control button {
-  min-height: 36px;
+  min-height: 54px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 7px;
   padding: 0 13px;
   border: 0;
@@ -678,6 +735,7 @@ select:focus {
   background: transparent;
   color: var(--muted);
   font-weight: 650;
+  text-align: left;
 }
 
 .segmented-control button.active {
@@ -686,9 +744,51 @@ select:focus {
   box-shadow: 0 1px 3px rgba(25, 35, 29, 0.14);
 }
 
+.segmented-control button[data-mode="TESTING"].active {
+  color: var(--green-dark);
+}
+
+.segmented-control button[data-mode="NORMAL"].active {
+  color: #754d0d;
+}
+
+.segmented-control button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.segmented-control button strong {
+  font-size: 12px;
+}
+
+.segmented-control button small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
 .segmented-control svg {
   width: 16px;
   height: 16px;
+}
+
+.mode-pending {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--amber);
+  background: var(--amber-soft);
+  color: #754d0d;
+  font-size: 12px;
+}
+
+.mode-pending svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 
 .phone-control-grid {
@@ -1099,6 +1199,12 @@ fieldset {
 
   .segmented-control {
     width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .segmented-control button {
+    min-width: 0;
+    padding-inline: 9px;
   }
 
   .phone-control-grid {

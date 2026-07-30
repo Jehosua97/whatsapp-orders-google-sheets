@@ -49,9 +49,9 @@
       </nav>
 
       <main>
-        <div class="test-banner" id="testBanner" hidden>
+        <div class="test-banner" id="testBanner">
           <i data-lucide="shield-check"></i>
-          <span>Modo de pruebas: los mensajes solo se envían a clientes autorizados.</span>
+          <span id="automationBannerText">Verificando el modo activo del bot.</span>
         </div>
 
         <section class="view active" id="catalogView">
@@ -164,26 +164,47 @@
             </div>
             <button class="button primary" id="saveAutomationButton">
               <i data-lucide="save"></i>
-              Guardar configuración
+              Guardar y aplicar
             </button>
+          </div>
+
+          <div class="automation-active-status" id="automationActiveStatus">
+            <span class="active-status-icon">
+              <i data-lucide="shield-check"></i>
+            </span>
+            <div>
+              <span>Configuración activa ahora</span>
+              <strong id="activeAutomationLabel">Solo pruebas</strong>
+              <p id="activeAutomationDetail"></p>
+            </div>
           </div>
 
           <section class="automation-mode-section">
             <div>
-              <h2>Modo de respuesta</h2>
-              <p class="mode-description" id="automationModeDescription"></p>
+              <h2>Selecciona cómo responderá el bot</h2>
+              <p class="mode-description">La selección se activa únicamente después de guardar.</p>
             </div>
             <div class="segmented-control" id="automationMode" role="radiogroup" aria-label="Modo de respuesta">
-              <button type="button" data-mode="NORMAL" role="radio">
-                <i data-lucide="radio-tower"></i>
-                Normal
-              </button>
               <button type="button" data-mode="TESTING" role="radio">
                 <i data-lucide="flask-conical"></i>
-                Pruebas
+                <span>
+                  <strong>Solo pruebas</strong>
+                  <small>Solo permitidos</small>
+                </span>
+              </button>
+              <button type="button" data-mode="NORMAL" role="radio">
+                <i data-lucide="radio-tower"></i>
+                <span>
+                  <strong>Producción</strong>
+                  <small>Todos excepto bloqueados</small>
+                </span>
               </button>
             </div>
           </section>
+          <div class="mode-pending" id="automationPending" hidden>
+            <i data-lucide="save"></i>
+            <span>Hay cambios sin aplicar. Presiona <strong>Guardar y aplicar</strong> para activar esta selección.</span>
+          </div>
 
           <div class="phone-control-grid">
             <section class="phone-list-section">

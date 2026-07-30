@@ -13,6 +13,7 @@ const weekdays = [
 const state = {
   dashboard: null,
   selectedClosureId: "",
+  savedAutomation: null,
 };
 
 const elements = {
@@ -311,6 +312,17 @@ function formatPhone(phone) {
   return `+${digits}`;
 }
 
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function automationChanged() {
+  return (
+    JSON.stringify(state.dashboard.automation) !==
+    JSON.stringify(state.savedAutomation)
+  );
+}
+
 function phoneRows(phones, list) {
   return phones.length
     ? phones
@@ -332,15 +344,24 @@ function phoneRows(phones, list) {
 
 function renderAutomation() {
   const automation = state.dashboard.automation;
+  const activeAutomation = state.savedAutomation || automation;
   document.querySelectorAll("#automationMode [data-mode]").forEach((button) => {
-    const active = button.dataset.mode === automation.mode;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-checked", String(active));
+    const selected = button.dataset.mode === automation.mode;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-checked", String(selected));
   });
-  document.querySelector("#automationModeDescription").textContent =
-    automation.mode === "TESTING"
-      ? "El bot responde únicamente a los números permitidos."
-      : "El bot responde a todos, excepto a los números bloqueados.";
+  const productionActive = activeAutomation.mode === "NORMAL";
+  const activeStatus = document.querySelector("#automationActiveStatus");
+  activeStatus.classList.toggle("production", productionActive);
+  document.querySelector("#activeAutomationLabel").textContent =
+    productionActive ? "Producción" : "Solo pruebas";
+  document.querySelector("#activeAutomationDetail").textContent =
+    productionActive
+      ? "El bot está respondiendo a todos excepto a los números bloqueados."
+      : `El bot está respondiendo solo a ${activeAutomation.allowedPhones.length} números permitidos.`;
+  const changed = automationChanged();
+  document.querySelector("#automationPending").hidden = !changed;
+  document.querySelector("#saveAutomationButton").disabled = !changed;
   document.querySelector("#allowedCount").textContent =
     automation.allowedPhones.length;
   document.querySelector("#blockedCount").textContent =
@@ -410,7 +431,15 @@ function renderAll() {
   document
     .querySelector("#connectionDot")
     .classList.toggle("disconnected", !connected && !connecting);
-  document.querySelector("#testBanner").hidden = !state.dashboard.testMode;
+  const activeAutomation =
+    state.savedAutomation || state.dashboard.automation;
+  const productionActive = activeAutomation.mode === "NORMAL";
+  const banner = document.querySelector("#testBanner");
+  banner.classList.toggle("production", productionActive);
+  document.querySelector("#automationBannerText").textContent =
+    productionActive
+      ? "Modo PRODUCCIÓN activo: el bot responde a todos excepto a los números bloqueados."
+      : `Modo SOLO PRUEBAS activo: el bot responde únicamente a ${activeAutomation.allowedPhones.length} números permitidos.`;
   renderCatalog();
   renderSchedules();
   renderRescheduling();
@@ -422,6 +451,7 @@ async function loadDashboard(showMessage = false) {
   setLoading(button, true);
   try {
     state.dashboard = await api("/api/dashboard");
+    state.savedAutomation = clone(state.dashboard.automation);
     renderAll();
     if (showMessage) showToast("Datos actualizados.");
   } catch (error) {
@@ -646,8 +676,6 @@ document.querySelector("#automationMode").addEventListener("click", (event) => {
   const button = event.target.closest("[data-mode]");
   if (!button) return;
   state.dashboard.automation.mode = button.dataset.mode;
-  state.dashboard.testMode = button.dataset.mode === "TESTING";
-  document.querySelector("#testBanner").hidden = !state.dashboard.testMode;
   renderAutomation();
 });
 
@@ -707,6 +735,16 @@ document.querySelector("#automationView").addEventListener("click", (event) => {
 
 document.querySelector("#saveAutomationButton").addEventListener("click", async (event) => {
   const button = event.currentTarget;
+  if (!automationChanged()) return;
+  if (
+    state.savedAutomation.mode !== "NORMAL" &&
+    state.dashboard.automation.mode === "NORMAL" &&
+    !window.confirm(
+      "Vas a activar PRODUCCIÓN. El bot responderá a todos los clientes excepto a los números bloqueados. ¿Deseas continuar?",
+    )
+  ) {
+    return;
+  }
   setLoading(button, true);
   try {
     const result = await api("/api/automation", {
@@ -716,13 +754,19 @@ document.querySelector("#saveAutomationButton").addEventListener("click", async 
       }),
     });
     state.dashboard.automation = result.automation;
+    state.savedAutomation = clone(result.automation);
     state.dashboard.testMode = result.automation.mode === "TESTING";
     renderAll();
-    showToast("Control del bot guardado y aplicado.");
+    showToast(
+      result.automation.mode === "NORMAL"
+        ? "Modo PRODUCCIÓN activado."
+        : "Modo SOLO PRUEBAS activado.",
+    );
   } catch (error) {
     showToast(error.message, true);
   } finally {
     setLoading(button, false);
+    renderAutomation();
   }
 });
 
