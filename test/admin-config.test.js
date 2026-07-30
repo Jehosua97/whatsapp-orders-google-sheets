@@ -40,11 +40,26 @@ test("el catalogo administrativo alimenta la configuracion del bot", () => {
 
   const runtime = store.runtimeConfig();
   assert.equal(runtime.catalog[0].id, "taco-pastor");
+  assert.equal(runtime.catalog[0].sheetName, "Taco al pastor");
   assert.equal(runtime.menuPrices["taco-pastor"], 4.25);
   assert.equal(
     new AdminConfigStore(file, baseConfig).getState().catalog[0].name,
     "Taco al pastor",
   );
+});
+
+test("usa el mismo nombre del producto en la hoja de cocina", () => {
+  const product = normalizeCatalog([
+    {
+      name: "Concha especial",
+      sheetName: "Nombre anterior",
+      price: 4,
+      active: true,
+    },
+  ])[0];
+
+  assert.equal(product.name, "Concha especial");
+  assert.equal(product.sheetName, "Concha especial");
 });
 
 test("guarda los modos de automatizacion y sus listas de telefonos", () => {

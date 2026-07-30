@@ -106,7 +106,6 @@ function renderCatalog() {
             <input class="emoji-input" data-field="emoji" value="${escapeHtml(product.emoji)}" aria-label="Icono" maxlength="8">
             <input data-field="name" value="${escapeHtml(product.name)}" aria-label="Nombre del producto">
           </div>
-          <input data-field="sheetName" value="${escapeHtml(product.sheetName)}" aria-label="Nombre en cocina">
           <div class="price-field">
             <input data-field="price" type="number" min="0" step="0.25" value="${Number(product.price).toFixed(2)}" aria-label="Precio">
           </div>
@@ -128,12 +127,13 @@ function catalogFromForm() {
     (row) => {
       const existing =
         state.dashboard.catalog[Number(row.dataset.index)] || {};
+      const name = row.querySelector('[data-field="name"]').value;
       return {
         id: existing.id,
         emoji: row.querySelector('[data-field="emoji"]').value,
-        name: row.querySelector('[data-field="name"]').value,
-        promptName: row.querySelector('[data-field="name"]').value,
-        sheetName: row.querySelector('[data-field="sheetName"]').value,
+        name,
+        promptName: name,
+        sheetName: name,
         price: Number(row.querySelector('[data-field="price"]').value),
         active: row.querySelector('[data-field="active"]').checked,
       };

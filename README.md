@@ -250,7 +250,7 @@ http://127.0.0.1:3090
 
 The panel supports:
 
-- Up to ten catalog products with editable names, kitchen labels, prices,
+- Up to ten catalog products with editable names, prices,
   icons, and availability.
 - Weekly pickup and delivery availability with independent time windows.
 - Compact date availability and date-specific exceptions.

@@ -156,7 +156,7 @@ function normalizeCatalog(catalog) {
       id,
       name,
       promptName: String(item.promptName || name).trim(),
-      sheetName: String(item.sheetName || name).trim(),
+      sheetName: name,
       emoji: String(item.emoji || "🥖").trim().slice(0, 8),
       price: Math.round(price * 100) / 100,
       active: item.active !== false,
