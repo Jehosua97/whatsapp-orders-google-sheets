@@ -142,7 +142,7 @@ async function handleSystemDisableCommand({
   await message.reply(
     "Sistema desactivado. El bot no volvera a iniciar automaticamente.",
   );
-  logger.log(`Sistema desactivado por el numero autorizado: ${senderPhone}`);
+  logger.log(`Sistemad}`);
   shutdownSystem();
   return true;
 }
