@@ -72,6 +72,7 @@ function menuProductKeys(config) {
 
 function productOrderFromAnswer(answer, productKeys) {
   const index = Number(answer) - 1;
+  if (!Number.isInteger(index)) return null;
   if (index === productKeys.length && productKeys.length > 1) {
     return [...productKeys];
   }
@@ -211,7 +212,7 @@ function normalizeAnswer(value) {
 
 function updateKeyword(value) {
   const answer = normalizeAnswer(value);
-  return /\b(ACTUALIZAR|AGREGAR|ANADIR|QUITAR|ELIMINAR|CAMBIAR|MODIFICAR|CANCELAR|CANCELACION)\b/.test(
+  return /\b(ACTUALIZAR|AGREGAR|ANADIR|QUITAR|ELIMINAR|CAMBIAR|MODIFICAR|CANCELAR|CANCELACION|DIA|FECHA|PICKUP|DELIVERY|ENTREGA|RECOGER)\b/.test(
     answer,
   );
 }
@@ -425,6 +426,16 @@ function currentOrderMessage(session, config) {
   ].join("\n");
 }
 
+function confirmedOrderReminder(session) {
+  return [
+    `Hola, ${customerLabel(session.customerName)}.`,
+    "",
+    "Ya tienes un pedido confirmado.",
+    "Para modificarlo escribe ACTUALIZAR PEDIDO.",
+    "Para crear otro escribe NUEVO PEDIDO.",
+  ].join("\n");
+}
+
 function updateConfirmationMessage(session, config) {
   const details = finalSummary(session, config)
     .split("\n")
@@ -582,10 +593,22 @@ function newSession({
 
 function advanceConversation(session, input, config, now = new Date()) {
   const answer = normalizeAnswer(input);
-  const restartCommands = ["HOLA", "MENU", "PEDIDO", "ORDEN"];
+  const newOrderCommands = [
+    "NUEVO PEDIDO",
+    "NUEVA ORDEN",
+    "HACER PEDIDO",
+    "HACER OTRO PEDIDO",
+  ];
+  const canceledRestartCommands = [
+    "HOLA",
+    "MENU",
+    "PEDIDO",
+    "ORDEN",
+    ...newOrderCommands,
+  ];
 
   if (session.step === "COMPLETED") {
-    if (restartCommands.includes(answer)) {
+    if (newOrderCommands.includes(answer)) {
       const next = newSession({
         chatId: session.chatId,
         customerName: session.customerName,
@@ -598,12 +621,87 @@ function advanceConversation(session, input, config, now = new Date()) {
         messages: [menuMessage(next.customerName, config)],
       };
     }
+    if (["HOLA", "MENU", "PEDIDO", "ORDEN"].includes(answer)) {
+      return {
+        session,
+        messages: [confirmedOrderReminder(session)],
+      };
+    }
     if (updateKeyword(answer)) {
-      const next = {
+      const base = {
         ...session,
-        step: "UPDATE_MENU",
         updateBackup: updateBackup(session),
       };
+      if (cancelKeyword(answer)) {
+        return {
+          session: { ...base, step: "CANCEL_CONFIRMATION" },
+          messages: [
+            [
+              "⚠️ ¿Seguro que deseas cancelar todo el pedido?",
+              "Escribe SI para cancelarlo o NO para conservarlo.",
+            ].join("\n"),
+          ],
+        };
+      }
+      const isAdd = /\b(AGREGAR|ANADIR)\b/.test(answer);
+      const isRemove = /\b(QUITAR|ELIMINAR)\b/.test(answer);
+      if (isAdd || isRemove) {
+        const updateAction = isAdd ? "ADD" : "REMOVE";
+        const productKeys = updateProductKeys(
+          base,
+          updateAction,
+          config,
+        );
+        const next = {
+          ...base,
+          step: "UPDATE_PRODUCT",
+          updateAction,
+          updateProductKeys: productKeys,
+        };
+        return {
+          session: next,
+          messages: [
+            productUpdateMenu(next, updateAction, config, productKeys),
+          ],
+        };
+      }
+      if (/\b(DIA|FECHA)\b/.test(answer)) {
+        const choices = scheduleOptions(
+          config,
+          now,
+          session.fulfillment?.type || "",
+        );
+        return {
+          session: {
+            ...base,
+            step: "UPDATE_DAY",
+            updateScheduleOptions: choices,
+          },
+          messages: [
+            scheduleMenu(
+              choices,
+              "📅 ¿Para qué día quieres cambiar tu pedido?",
+            ),
+          ],
+        };
+      }
+      if (
+        /\b(PICKUP|DELIVERY|ENTREGA|RECOGER)\b/.test(answer)
+      ) {
+        const currentSchedule = scheduleAvailability(
+          session.schedule,
+          config,
+        );
+        return {
+          session: {
+            ...base,
+            step: "UPDATE_FULFILLMENT",
+            schedule: currentSchedule,
+          },
+          messages: [fulfillmentMenu(currentSchedule)],
+        };
+      }
+      const next = { ...base, step: "UPDATE_MENU" };
       return {
         session: next,
         messages: [currentOrderMessage(next, config)],
@@ -613,7 +711,7 @@ function advanceConversation(session, input, config, now = new Date()) {
   }
 
   if (session.step === "CANCELED") {
-    if (restartCommands.includes(answer)) {
+    if (canceledRestartCommands.includes(answer)) {
       const next = newSession({
         chatId: session.chatId,
         customerName: session.customerName,

@@ -221,13 +221,31 @@ test("rechaza cantidades y opciones invalidas sin avanzar", () => {
     customerPhone: "",
     now: monday,
   });
-  let result = answer(session, "9");
+  let result = answer(session, "quitar producto");
+  assert.equal(result.session.step, "MENU");
+  assert.deepEqual(result.session.productOrder, []);
+  assert.doesNotMatch(result.messages[0], /undefined/i);
+
+  result = answer(session, "9");
   assert.equal(result.session.step, "MENU");
 
   session = answer(session, "1").session;
   result = answer(session, "cinco");
   assert.equal(result.session.step, "QUANTITY");
   assert.equal(result.session.productIndex, 0);
+});
+
+test("HOLA conserva el pedido confirmado y NUEVO PEDIDO inicia otro", () => {
+  const confirmed = completedPickupSession();
+  let result = answer(confirmed, "hola");
+
+  assert.equal(result.session.step, "COMPLETED");
+  assert.equal(result.session.orderId, confirmed.orderId);
+  assert.match(result.messages[0], /Ya tienes un pedido confirmado/);
+
+  result = answer(confirmed, "nuevo pedido");
+  assert.equal(result.session.step, "MENU");
+  assert.notEqual(result.session.orderId, confirmed.orderId);
 });
 
 test("calcula delivery en Brampton y solicita la direccion antes de confirmar", () => {
@@ -297,10 +315,9 @@ test("NO cancela sin completar el pedido", () => {
 test("detecta agregar y actualiza cantidades solo despues de SI", () => {
   let result = answer(completedPickupSession(), "quiero agregar bolillos");
   let session = result.session;
-  assert.equal(session.step, "UPDATE_MENU");
-  assert.match(result.messages[0], /ESTE ES TU PEDIDO ACTUAL/);
+  assert.equal(session.step, "UPDATE_PRODUCT");
+  assert.match(result.messages[0], /Qué producto deseas agregar/);
 
-  session = answer(session, "1").session;
   session = answer(session, "3").session;
   result = answer(session, "2");
   session = result.session;
@@ -316,7 +333,6 @@ test("detecta agregar y actualiza cantidades solo despues de SI", () => {
 
 test("NO descarta una modificacion y restaura el pedido anterior", () => {
   let session = answer(completedPickupSession(), "quitar").session;
-  session = answer(session, "2").session;
   session = answer(session, "1").session;
   session = answer(session, "2").session;
   assert.equal(session.quantities.chocolate, 3);
@@ -328,7 +344,6 @@ test("NO descarta una modificacion y restaura el pedido anterior", () => {
 
 test("no permite quitar productos si quedan menos del minimo", () => {
   let session = answer(completedPickupSession(), "quitar").session;
-  session = answer(session, "2").session;
   session = answer(session, "1").session;
   const result = answer(session, "4");
 
@@ -338,7 +353,6 @@ test("no permite quitar productos si quedan menos del minimo", () => {
 
 test("permite cambiar de pickup gratis a delivery", () => {
   let session = answer(completedPickupSession(), "cambiar entrega").session;
-  session = answer(session, "4").session;
   session = answer(session, "2").session;
   session = answer(session, "2").session;
   const result = answer(
@@ -372,12 +386,8 @@ test("conserva exactamente una liga de Google Maps", () => {
 test("cancelar un pedido confirmado requiere una segunda confirmacion", () => {
   let result = answer(completedPickupSession(), "cancelar mi pedido");
   let session = result.session;
-  assert.equal(session.step, "UPDATE_MENU");
-  assert.match(result.messages[0], /PEDIDO ACTUAL/);
-
-  result = answer(session, "cancelar");
-  session = result.session;
   assert.equal(session.step, "CANCEL_CONFIRMATION");
+  assert.match(result.messages[0], /Seguro que deseas cancelar/);
 
   result = answer(session, "SI");
   assert.equal(result.orderCanceled, true);

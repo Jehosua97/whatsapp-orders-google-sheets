@@ -218,14 +218,14 @@ test("el manejador guarda solamente despues de recibir SI", async () => {
   assert.equal(savedOrders[0].summary.total, 25);
   assert.match(replies.at(-1), /Pedido confirmado, Ana/);
 
-  for (const input of ["agregar", "1", "3", "2", "SI"]) {
+  for (const input of ["agregar", "3", "2", "SI"]) {
     await send(input);
   }
   assert.equal(replacedOrders.length, 1);
   assert.equal(replacedOrders[0].summary.total, 30);
   assert.match(replies.at(-1), /pedido fue actualizado/i);
 
-  for (const input of ["cancelar", "5", "SI"]) {
+  for (const input of ["cancelar", "SI"]) {
     await send(input);
   }
   assert.equal(orderUpdates.length, 1);
