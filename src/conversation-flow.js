@@ -5,6 +5,12 @@ const path = require("node:path");
 const { normalizeOrder } = require("./order");
 const { isServiceClosed } = require("./admin-config");
 const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
+const {
+  compatibleProductDates,
+  dateLabel,
+  normalizeProductionWeekdays,
+  WEEKDAY_NAMES,
+} = require("./product-availability");
 
 const PRODUCTS = {
   chocolate: {
@@ -13,6 +19,7 @@ const PRODUCTS = {
     promptName: "Conchitas de Chocolate",
     sheetName: "Concha de chocolate",
     productId: "concha-chocolate",
+    productionWeekdays: [3, 6],
   },
   vanilla: {
     emoji: "🍦",
@@ -20,6 +27,7 @@ const PRODUCTS = {
     promptName: "Conchitas de Vainilla",
     sheetName: "Concha de Vainilla",
     productId: "concha-vainilla",
+    productionWeekdays: [3, 6],
   },
   bolillo: {
     emoji: "🍞",
@@ -27,6 +35,7 @@ const PRODUCTS = {
     promptName: "Bolillos",
     sheetName: "Bolillo",
     productId: "bolillo",
+    productionWeekdays: [3, 6],
   },
 };
 
@@ -110,7 +119,7 @@ function configuredSchedules(config) {
   ];
 }
 
-function scheduleOptions(config, now, serviceType = "") {
+function legacyScheduleOptions(config, now, serviceType = "") {
   return configuredSchedules(config)
     .filter((schedule) => schedule.active !== false)
     .map((schedule) => {
@@ -144,6 +153,80 @@ function scheduleOptions(config, now, serviceType = "") {
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
+function productKeysFromQuantities(quantities) {
+  return Object.entries(quantities || {})
+    .filter(([, quantity]) => Number(quantity || 0) > 0)
+    .map(([productKey]) => productKey);
+}
+
+function scheduleOptions(
+  config,
+  now,
+  serviceType = "",
+  selectedProductKeys = [],
+) {
+  const requestedKeys = [...new Set(selectedProductKeys.filter(Boolean))];
+  const products = requestedKeys
+    .map((key) =>
+      activeProducts(config).find((product) => product.id === key),
+    )
+    .filter(Boolean);
+  const hasProductionRules =
+    requestedKeys.length > 0 &&
+    products.length === requestedKeys.length &&
+    products.every(
+      (product) =>
+        normalizeProductionWeekdays(product.productionWeekdays).length > 0,
+    );
+  if (!hasProductionRules) {
+    return legacyScheduleOptions(config, now, serviceType);
+  }
+
+  return compatibleProductDates(products, now).map((availability) => {
+    const configured =
+      configuredSchedules(config).find(
+        (schedule) => schedule.weekday === availability.weekday,
+      ) || {};
+    const pickupAvailable =
+      configured.pickupEnabled !== false &&
+      !isServiceClosed(
+        { closures: config.closures || [] },
+        availability.date,
+        "PICKUP",
+      );
+    const deliveryAvailable =
+      configured.deliveryEnabled !== false &&
+      !isServiceClosed(
+        { closures: config.closures || [] },
+        availability.date,
+        "DELIVERY",
+      );
+    return {
+      ...configured,
+      id: `products-${availability.date}`,
+      name: dateLabel(availability.date),
+      weekday: availability.weekday,
+      date: availability.date,
+      pickupWindow:
+        configured.pickupWindow || config.pickupTimeWindow,
+      deliveryWindow:
+        configured.deliveryWindow || "horario por confirmar",
+      pickupAvailable,
+      deliveryAvailable,
+      freshProductNames: availability.freshProducts.map(
+        (product) => product.name,
+      ),
+      previousDayProductNames: availability.previousDayProducts.map(
+        (product) => product.name,
+      ),
+    };
+  }).filter((schedule) => {
+    if (serviceType === "PICKUP") return schedule.pickupAvailable;
+    if (serviceType === "DELIVERY") return schedule.deliveryAvailable;
+    return schedule.pickupAvailable || schedule.deliveryAvailable;
+  });
+}
+
 function scheduleMenu(options, title = "📅 ¿Para qué día quieres tu entrega?") {
   if (!options.length) {
     return [
@@ -151,17 +234,31 @@ function scheduleMenu(options, title = "📅 ¿Para qué día quieres tu entrega
       "Por el momento no tenemos fechas disponibles. Te contactaremos para ayudarte.",
     ].join("\n");
   }
-  return [
-    title,
-    ...options.map(
-      (schedule, index) =>
-        `${index + 1} - ${schedule.name} (${schedule.pickupAvailable && schedule.deliveryAvailable
-          ? schedule.deliveryWindow || schedule.pickupWindow
-          : schedule.pickupAvailable
-            ? `Pickup: ${schedule.pickupWindow}`
-            : `Delivery: ${schedule.deliveryWindow}`})`,
-    ),
-  ].join("\n");
+  const lines = [title];
+  options.forEach((schedule, index) => {
+    if (schedule.freshProductNames) {
+      lines.push(`${index + 1} - ${schedule.name}`);
+      if (schedule.freshProductNames.length) {
+        lines.push(
+          `   Recién hechos: ${schedule.freshProductNames.join(", ")}`,
+        );
+      }
+      if (schedule.previousDayProductNames.length) {
+        lines.push(
+          `   Producción anterior: ${schedule.previousDayProductNames.join(", ")}`,
+        );
+      }
+      return;
+    }
+    lines.push(
+      `${index + 1} - ${schedule.name} (${schedule.pickupAvailable && schedule.deliveryAvailable
+        ? schedule.deliveryWindow || schedule.pickupWindow
+        : schedule.pickupAvailable
+          ? `Pickup: ${schedule.pickupWindow}`
+          : `Delivery: ${schedule.deliveryWindow}`})`,
+    );
+  });
+  return lines.join("\n");
 }
 
 function fulfillmentMenu(schedule) {
@@ -183,8 +280,8 @@ function scheduleAvailability(schedule, config) {
     configuredSchedules(config).find((item) => item.weekday === weekday) ||
     schedule;
   return {
-    ...schedule,
     ...current,
+    ...schedule,
     date: schedule.date,
     pickupAvailable:
       current.pickupEnabled !== false &&
@@ -258,8 +355,31 @@ function customerLabel(name) {
   return String(name || "").trim() || "cliente";
 }
 
+function productionCalendarLines(products) {
+  const groups = new Map();
+  for (const product of products) {
+    const weekdays = normalizeProductionWeekdays(
+      product.productionWeekdays,
+    );
+    if (!weekdays.length) continue;
+    const key = weekdays.join(",");
+    const current = groups.get(key) || { weekdays, names: [] };
+    current.names.push(product.name);
+    groups.set(key, current);
+  }
+  return [...groups.values()].map(({ weekdays, names }) => {
+    const dayNames = weekdays.map((weekday) => WEEKDAY_NAMES[weekday]);
+    const days =
+      dayNames.length === 1
+        ? dayNames[0]
+        : `${dayNames.slice(0, -1).join(", ")} y ${dayNames.at(-1)}`;
+    return `${days}: ${names.join(", ")}`;
+  });
+}
+
 function menuMessage(name, config) {
   const products = activeProducts(config);
+  const productionLines = productionCalendarLines(products);
   return [
     `Mucho gusto, ${customerLabel(name)} 😊`,
     "",
@@ -269,6 +389,14 @@ function menuMessage(name, config) {
       (product) =>
         `${product.emoji} ${product.name} - ${money(product.price)} c/u`,
     ),
+    ...(productionLines.length
+      ? [
+          "",
+          "📅 DÍAS DE PRODUCCIÓN:",
+          ...productionLines,
+          "También puedes pedir cada producto para el día siguiente a su producción.",
+        ]
+      : []),
     "",
     `⚠️ Pedido mínimo: ${config.minimumOrderPieces} piezas`,
     "",
@@ -715,6 +843,7 @@ function advanceConversation(session, input, config, now = new Date()) {
           config,
           now,
           session.fulfillment?.type || "",
+          productKeysFromQuantities(session.quantities),
         );
         return {
           session: {
@@ -910,7 +1039,12 @@ function advanceConversation(session, input, config, now = new Date()) {
       };
     }
 
-    const choices = scheduleOptions(config, now);
+    const choices = scheduleOptions(
+      config,
+      now,
+      "",
+      productKeysFromQuantities(quantities),
+    );
     const next = {
       ...session,
       step: "DAY",
@@ -1101,6 +1235,7 @@ function advanceConversation(session, input, config, now = new Date()) {
         config,
         now,
         session.fulfillment?.type || "",
+        productKeysFromQuantities(session.quantities),
       );
       return {
         session: {
@@ -1231,6 +1366,33 @@ function advanceConversation(session, input, config, now = new Date()) {
       step: "UPDATE_CONFIRMATION",
       quantities,
     };
+    const compatibleDates = scheduleOptions(
+      config,
+      now,
+      session.fulfillment?.type || "",
+      productKeysFromQuantities(quantities),
+    );
+    if (
+      session.schedule?.date &&
+      !compatibleDates.some(
+        (option) => option.date === session.schedule.date,
+      )
+    ) {
+      const rescheduled = {
+        ...next,
+        step: "UPDATE_DAY",
+        updateScheduleOptions: compatibleDates,
+      };
+      return {
+        session: rescheduled,
+        messages: [
+          scheduleMenu(
+            compatibleDates,
+            "Al cambiar los productos necesitamos ajustar la fecha. Estas opciones mantienen todo dentro de un día de producción:",
+          ),
+        ],
+      };
+    }
     return {
       session: next,
       messages: [updateConfirmationMessage(next, config)],

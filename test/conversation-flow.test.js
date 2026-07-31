@@ -13,6 +13,7 @@ const {
   menuMessage,
   newSession,
   parseDeliveryAddress,
+  scheduleOptions,
   subtotal,
   totalPieces,
   updatedMessage,
@@ -36,6 +37,45 @@ const config = {
 };
 
 const monday = new Date("2026-07-27T15:00:00.000Z");
+
+test("combina productos usando produccion del dia y del dia anterior", () => {
+  const availabilityConfig = {
+    ...config,
+    catalog: [
+      {
+        id: "bolobon",
+        name: "Bolobón",
+        price: 6,
+        productionWeekdays: [2, 4],
+        active: true,
+      },
+      {
+        id: "concha",
+        name: "Concha",
+        price: 3.5,
+        productionWeekdays: [3, 6],
+        active: true,
+      },
+    ],
+    schedules: [],
+    closures: [],
+  };
+  const options = scheduleOptions(
+    availabilityConfig,
+    new Date("2026-07-31T15:00:00.000Z"),
+    "PICKUP",
+    ["bolobon", "concha"],
+  );
+
+  assert.deepEqual(
+    options.slice(0, 2).map((option) => option.date),
+    ["2026-08-05", "2026-08-06"],
+  );
+  assert.deepEqual(options[0].freshProductNames, ["Concha"]);
+  assert.deepEqual(options[0].previousDayProductNames, ["Bolobón"]);
+  assert.deepEqual(options[1].freshProductNames, ["Bolobón"]);
+  assert.deepEqual(options[1].previousDayProductNames, ["Concha"]);
+});
 
 function answer(session, input) {
   return advanceConversation(session, input, config, monday);
@@ -91,8 +131,8 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
 
   result = answer(session, "2");
   session = result.session;
-  assert.equal(session.schedule.date, "2026-08-01");
-  assert.match(result.messages[0], /Sábado anotado/);
+  assert.equal(session.schedule.date, "2026-07-30");
+  assert.match(result.messages[0], /Jueves 30 de julio anotado/);
 
   result = answer(session, "1");
   session = result.session;
@@ -119,7 +159,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   assert.equal(order.summary.orderId, session.orderId);
   assert.equal(order.summary.total, 25);
   assert.equal(order.summary.grandTotal, 25);
-  assert.equal(order.summary.requestedDate, "2026-08-01");
+  assert.equal(order.summary.requestedDate, "2026-07-30");
   assert.equal(order.summary.fulfillmentType, "PICKUP");
   assert.equal(order.summary.address, "154 Royal Palm Dr, Brampton");
   assert.equal(order.summary.status, "CONFIRMADO");

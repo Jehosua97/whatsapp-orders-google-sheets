@@ -34,6 +34,7 @@ test("el catalogo administrativo alimenta la configuracion del bot", () => {
       sheetName: "Taco al pastor",
       emoji: "🌮",
       price: 4.25,
+      productionWeekdays: [2, 4],
       active: true,
     },
   ]);
@@ -41,6 +42,7 @@ test("el catalogo administrativo alimenta la configuracion del bot", () => {
   const runtime = store.runtimeConfig();
   assert.equal(runtime.catalog[0].id, "taco-pastor");
   assert.equal(runtime.catalog[0].sheetName, "Taco al pastor");
+  assert.deepEqual(runtime.catalog[0].productionWeekdays, [2, 4]);
   assert.equal(runtime.menuPrices["taco-pastor"], 4.25);
   assert.equal(
     new AdminConfigStore(file, baseConfig).getState().catalog[0].name,
@@ -60,6 +62,22 @@ test("usa el mismo nombre del producto en la hoja de cocina", () => {
 
   assert.equal(product.name, "Concha especial");
   assert.equal(product.sheetName, "Concha especial");
+  assert.deepEqual(product.productionWeekdays, [3, 6]);
+});
+
+test("exige produccion para cada producto disponible", () => {
+  assert.throws(
+    () =>
+      normalizeCatalog([
+        {
+          name: "Producto sin fecha",
+          price: 4,
+          productionWeekdays: [],
+          active: true,
+        },
+      ]),
+    /día de producción/i,
+  );
 });
 
 test("guarda los modos de automatizacion y sus listas de telefonos", () => {

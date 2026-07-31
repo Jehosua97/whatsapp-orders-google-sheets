@@ -2,6 +2,9 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  normalizeProductionWeekdays,
+} = require("./product-availability");
 
 const MAX_PRODUCTS = 10;
 const SERVICE_TYPES = ["PICKUP", "DELIVERY"];
@@ -78,6 +81,7 @@ function defaultState(baseConfig) {
         sheetName: "Concha de chocolate",
         emoji: "🍫",
         price: Number(baseConfig.menuPrices.chocolate),
+        productionWeekdays: [3, 6],
         active: true,
       },
       {
@@ -87,6 +91,7 @@ function defaultState(baseConfig) {
         sheetName: "Concha de Vainilla",
         emoji: "🍦",
         price: Number(baseConfig.menuPrices.vanilla),
+        productionWeekdays: [3, 6],
         active: true,
       },
       {
@@ -96,6 +101,47 @@ function defaultState(baseConfig) {
         sheetName: "Bolillo",
         emoji: "🍞",
         price: Number(baseConfig.menuPrices.bolillo),
+        productionWeekdays: [3, 6],
+        active: true,
+      },
+      {
+        id: "bolobon-pastor",
+        name: "Bolobón de Pastor",
+        promptName: "Bolobones de Pastor",
+        sheetName: "Bolobón de Pastor",
+        emoji: "🥐",
+        price: 6,
+        productionWeekdays: [2, 4],
+        active: true,
+      },
+      {
+        id: "bolobon-chorizo",
+        name: "Bolobón de Chorizo",
+        promptName: "Bolobones de Chorizo",
+        sheetName: "Bolobón de Chorizo",
+        emoji: "🥐",
+        price: 6,
+        productionWeekdays: [2, 4],
+        active: true,
+      },
+      {
+        id: "rol-tres-leches",
+        name: "Rol de 3 Leches",
+        promptName: "Roles de 3 Leches",
+        sheetName: "Rol de 3 Leches",
+        emoji: "🍥",
+        price: 10,
+        productionWeekdays: [2, 4],
+        active: true,
+      },
+      {
+        id: "rol-clasico-glaseado",
+        name: "Rol Clásico Glaseado",
+        promptName: "Roles Clásicos Glaseados",
+        sheetName: "Rol Clásico Glaseado",
+        emoji: "🍥",
+        price: 10,
+        productionWeekdays: [2, 4],
         active: true,
       },
     ],
@@ -152,6 +198,16 @@ function normalizeCatalog(catalog) {
     let id = slug(item.id || name) || `producto-${index + 1}`;
     while (usedIds.has(id)) id = `${id}-${index + 1}`;
     usedIds.add(id);
+    const productionWeekdays = normalizeProductionWeekdays(
+      item.productionWeekdays === undefined
+        ? [3, 6]
+        : item.productionWeekdays,
+    );
+    if (item.active !== false && !productionWeekdays.length) {
+      throw new Error(
+        `Selecciona por lo menos un día de producción para ${name}.`,
+      );
+    }
     return {
       id,
       name,
@@ -159,6 +215,7 @@ function normalizeCatalog(catalog) {
       sheetName: name,
       emoji: String(item.emoji || "🥖").trim().slice(0, 8),
       price: Math.round(price * 100) / 100,
+      productionWeekdays,
       active: item.active !== false,
     };
   });

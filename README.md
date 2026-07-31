@@ -250,8 +250,11 @@ http://127.0.0.1:3090
 
 The panel supports:
 
-- Up to ten catalog products with editable names, prices,
-  icons, and availability.
+- Up to ten catalog products with editable names, prices, icons, and one or
+  more production weekdays.
+- Automatic customer dates based on the selected products: production day
+  or, at most, the following day. Mixed orders only receive dates compatible
+  with every product.
 - Weekly pickup and delivery availability with independent time windows.
 - Compact date availability and date-specific exceptions.
 - Affected-order review with the next immediate available date.

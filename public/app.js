@@ -9,6 +9,7 @@ const weekdays = [
   "Viernes",
   "Sábado",
 ];
+const weekdayShortLabels = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 const state = {
   dashboard: null,
@@ -106,6 +107,17 @@ function renderCatalog() {
             <input class="emoji-input" data-field="emoji" value="${escapeHtml(product.emoji)}" aria-label="Icono" maxlength="8">
             <input data-field="name" value="${escapeHtml(product.name)}" aria-label="Nombre del producto">
           </div>
+          <div class="production-weekdays" aria-label="Días de producción de ${escapeHtml(product.name)}">
+            ${weekdayShortLabels
+              .map(
+                (label, weekday) => `
+                  <label class="weekday-option">
+                    <input type="checkbox" data-production-weekday value="${weekday}" ${(product.productionWeekdays || []).includes(weekday) ? "checked" : ""}>
+                    <span>${label}</span>
+                  </label>`,
+              )
+              .join("")}
+          </div>
           <div class="price-field">
             <input data-field="price" type="number" min="0" step="0.25" value="${Number(product.price).toFixed(2)}" aria-label="Precio">
           </div>
@@ -134,6 +146,9 @@ function catalogFromForm() {
         name,
         promptName: name,
         sheetName: name,
+        productionWeekdays: [
+          ...row.querySelectorAll('[data-production-weekday]:checked'),
+        ].map((input) => Number(input.value)),
         price: Number(row.querySelector('[data-field="price"]').value),
         active: row.querySelector('[data-field="active"]').checked,
       };
@@ -487,6 +502,7 @@ document.querySelector("#addProductButton").addEventListener("click", () => {
     sheetName: "Nuevo producto",
     emoji: "🥖",
     price: 0,
+    productionWeekdays: [2],
     active: true,
   });
   renderCatalog();

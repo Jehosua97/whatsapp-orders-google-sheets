@@ -60,17 +60,25 @@ function schedulePrompt(options, serviceType) {
   if (!options.length) {
     return "Por el momento no tenemos fechas disponibles para esta modalidad.";
   }
-  return [
-    "📅 ¿Para qué día quieres tu pedido?",
-    ...options.map(
-      (schedule, index) =>
-        `${index + 1} - ${schedule.name} (${
-          serviceType === "PICKUP"
-            ? schedule.pickupWindow
-            : schedule.deliveryWindow
-        })`,
-    ),
-  ].join("\n");
+  const lines = ["📅 ¿Para qué día quieres tu pedido?"];
+  options.forEach((schedule, index) => {
+    lines.push(
+      `${index + 1} - ${schedule.name} (${
+        serviceType === "PICKUP"
+          ? schedule.pickupWindow
+          : schedule.deliveryWindow
+      })`,
+    );
+    if (schedule.freshProductNames?.length) {
+      lines.push(`   Recién hechos: ${schedule.freshProductNames.join(", ")}`);
+    }
+    if (schedule.previousDayProductNames?.length) {
+      lines.push(
+        `   Producción anterior: ${schedule.previousDayProductNames.join(", ")}`,
+      );
+    }
+  });
+  return lines.join("\n");
 }
 
 function cartFinalSummary(session) {
@@ -210,6 +218,17 @@ function productMatchesItem(product, item) {
   ]
     .filter(Boolean)
     .some((name) => canonicalProductName(name) === itemName);
+}
+
+function cartAvailabilityProductKeys(session, config) {
+  const items = foodItems(session.cartOrder).filter(
+    (item) => Number(item.quantity || 0) > 0,
+  );
+  return catalogProducts(config)
+    .filter((product) =>
+      items.some((item) => productMatchesItem(product, item)),
+    )
+    .map((product) => product.id);
 }
 
 function totalCartPieces(session) {
@@ -532,6 +551,7 @@ function advanceCartConversation(session, input, config, now = new Date()) {
         config,
         now,
         session.fulfillment.type,
+        cartAvailabilityProductKeys(session, config),
       );
       return {
         session: {
@@ -660,6 +680,35 @@ function advanceCartConversation(session, input, config, now = new Date()) {
         ],
       };
     }
+    const availabilitySession = { ...next, cartOrder };
+    const compatibleDates = scheduleOptions(
+      config,
+      now,
+      session.fulfillment?.type || "",
+      cartAvailabilityProductKeys(availabilitySession, config),
+    );
+    if (
+      session.schedule?.date &&
+      !compatibleDates.some(
+        (option) => option.date === session.schedule.date,
+      )
+    ) {
+      return {
+        session: {
+          ...next,
+          step: "CART_DAY",
+          scheduleOptions: compatibleDates,
+          updateMode: true,
+        },
+        messages: [
+          [
+            "Al cambiar los productos necesitamos ajustar la fecha para conservar su frescura.",
+            "",
+            schedulePrompt(compatibleDates, session.fulfillment.type),
+          ].join("\n"),
+        ],
+      };
+    }
     return {
       session: next,
       messages: [cartUpdateConfirmationPrompt(next)],
@@ -668,7 +717,12 @@ function advanceCartConversation(session, input, config, now = new Date()) {
 
   if (session.step === "CART_FULFILLMENT") {
     if (answer === "1") {
-      const choices = scheduleOptions(config, now, "PICKUP");
+      const choices = scheduleOptions(
+        config,
+        now,
+        "PICKUP",
+        cartAvailabilityProductKeys(session, config),
+      );
       const next = {
         ...session,
         step: "CART_DAY",
@@ -740,7 +794,12 @@ function advanceCartConversation(session, input, config, now = new Date()) {
         ],
       };
     }
-    const choices = scheduleOptions(config, now, "DELIVERY");
+    const choices = scheduleOptions(
+      config,
+      now,
+      "DELIVERY",
+      cartAvailabilityProductKeys(session, config),
+    );
     return {
       session: {
         ...session,
