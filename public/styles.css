@@ -573,7 +573,7 @@ select:focus {
 
 .service-editor {
   display: grid;
-  grid-template-columns: 82px 1fr;
+  grid-template-columns: 120px 1fr;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
@@ -585,10 +585,35 @@ select:focus {
   border-left-color: var(--blue);
 }
 
+.service-editor.unavailable {
+  border-left-color: #aab2ad;
+  background: #f1f3f2;
+}
+
+.service-editor.unavailable > input {
+  color: var(--muted);
+  background: #e7eae8;
+}
+
 .switch-line {
   gap: 8px;
   font-weight: 650;
   font-size: 12px;
+}
+
+.service-copy {
+  display: grid;
+  gap: 1px;
+}
+
+.service-copy small {
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.service-editor.unavailable .service-copy small {
+  color: #68716c;
 }
 
 .section-heading {

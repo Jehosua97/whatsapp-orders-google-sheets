@@ -158,8 +158,10 @@ function catalogFromForm() {
 
 function renderSchedules() {
   elements.scheduleRows.innerHTML = state.dashboard.schedules
-    .map(
-      (schedule, index) => `
+    .map((schedule, index) => {
+      const pickupEnabled = schedule.pickupEnabled !== false;
+      const deliveryEnabled = schedule.deliveryEnabled !== false;
+      return `
         <div class="schedule-row" data-index="${index}">
           <div class="schedule-identity">
             <select data-field="weekday" aria-label="Día de la semana">
@@ -171,33 +173,50 @@ function renderSchedules() {
                 .join("")}
             </select>
           </div>
-          <div class="service-editor">
+          <div class="service-editor ${pickupEnabled ? "" : "unavailable"}">
             <label class="switch-line">
               <span class="switch">
-                <input data-field="pickupEnabled" type="checkbox" ${schedule.pickupEnabled ? "checked" : ""}>
+                <input data-field="pickupEnabled" type="checkbox" ${pickupEnabled ? "checked" : ""}>
                 <span></span>
               </span>
-              Pickup
+              <span class="service-copy">
+                <strong>Pickup</strong>
+                <small>${pickupEnabled ? "Disponible" : "No disponible"}</small>
+              </span>
             </label>
-            <input data-field="pickupWindow" value="${escapeHtml(schedule.pickupWindow)}" aria-label="Horario de pickup">
+            <input data-field="pickupWindow" value="${escapeHtml(schedule.pickupWindow)}" aria-label="Horario de pickup" ${pickupEnabled ? "" : "disabled"}>
           </div>
-          <div class="service-editor delivery">
+          <div class="service-editor delivery ${deliveryEnabled ? "" : "unavailable"}">
             <label class="switch-line">
               <span class="switch">
-                <input data-field="deliveryEnabled" type="checkbox" ${schedule.deliveryEnabled ? "checked" : ""}>
+                <input data-field="deliveryEnabled" type="checkbox" ${deliveryEnabled ? "checked" : ""}>
                 <span></span>
               </span>
-              Delivery
+              <span class="service-copy">
+                <strong>Delivery</strong>
+                <small>${deliveryEnabled ? "Disponible" : "No disponible"}</small>
+              </span>
             </label>
-            <input data-field="deliveryWindow" value="${escapeHtml(schedule.deliveryWindow)}" aria-label="Horario de delivery">
+            <input data-field="deliveryWindow" value="${escapeHtml(schedule.deliveryWindow)}" aria-label="Horario de delivery" ${deliveryEnabled ? "" : "disabled"}>
           </div>
           <button class="icon-button danger-icon remove-schedule" title="Eliminar día" ${state.dashboard.schedules.length === 1 ? "disabled" : ""}>
             <i data-lucide="trash-2"></i>
           </button>
-        </div>`,
-    )
+        </div>`;
+    })
     .join("");
   icons();
+}
+
+function updateScheduleServiceState(toggle) {
+  const editor = toggle.closest(".service-editor");
+  const available = toggle.checked;
+  editor.classList.toggle("unavailable", !available);
+  editor.querySelector(".service-copy small").textContent = available
+    ? "Disponible"
+    : "No disponible";
+  editor.querySelector('input[type="text"], input:not([type])').disabled =
+    !available;
 }
 
 function schedulesFromForm() {
@@ -554,6 +573,16 @@ elements.scheduleRows.addEventListener("click", (event) => {
   const row = button.closest(".schedule-row");
   state.dashboard.schedules.splice(Number(row.dataset.index), 1);
   renderSchedules();
+});
+
+elements.scheduleRows.addEventListener("change", (event) => {
+  if (
+    event.target.matches(
+      '[data-field="pickupEnabled"], [data-field="deliveryEnabled"]',
+    )
+  ) {
+    updateScheduleServiceState(event.target);
+  }
 });
 
 document.querySelector("#saveSchedulesButton").addEventListener("click", async (event) => {
