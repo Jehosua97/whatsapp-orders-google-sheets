@@ -247,6 +247,62 @@ function locationReceivedReply() {
   );
 }
 
+function liveLocationAddressReply() {
+  return (
+    "Recibimos una ubicación en tiempo real. " +
+    "Para estar seguros, ¿me pudiera confirmar en texto su dirección completa?"
+  );
+}
+
+function isLiveLocationMessage(message) {
+  const raw = message?.rawData || message?._data || {};
+  const type = String(message?.type || raw.type || "").toLowerCase();
+  const rawType = String(raw.type || "").toLowerCase();
+  const liveTypes = new Set([
+    "live_location",
+    "live-location",
+    "livelocation",
+  ]);
+  const liveFlag =
+    message?.location?.isLive === true ||
+    raw.isLive === true ||
+    raw.live === true ||
+    raw.isLiveLocation === true ||
+    Boolean(raw.liveLocation || raw.liveLocationMessage);
+  const trackingDuration = Number(
+    raw.shareDuration || raw.duration || raw.location?.shareDuration || 0,
+  );
+
+  return (
+    liveTypes.has(type) ||
+    liveTypes.has(rawType) ||
+    liveFlag ||
+    (type === "location" && trackingDuration > 0)
+  );
+}
+
+async function handleLiveLocation({
+  message,
+  store,
+  conversationState,
+}) {
+  if (!isLiveLocationMessage(message)) return false;
+
+  const session = conversationState?.get(message.from);
+  const waitingForAddress =
+    session &&
+    ["ADDRESS", "UPDATE_ADDRESS", "CART_ADDRESS"].includes(
+      session.step,
+    );
+  const pending = waitingForAddress
+    ? true
+    : await store.getPendingOrderByChat(message.from);
+  if (!pending) return false;
+
+  await message.reply(liveLocationAddressReply());
+  return true;
+}
+
 async function handleLocation({ message, store, config }) {
   const pending = await store.getPendingOrderByChat(message.from);
   if (!pending) return false;
@@ -597,6 +653,20 @@ function createWhatsAppClient({
         return;
       }
 
+      if (isLiveLocationMessage(message)) {
+        const handled = await handleLiveLocation({
+          message,
+          store,
+          conversationState,
+        });
+        if (!handled) {
+          logger.log(
+            `Ubicación en tiempo real ignorada fuera del paso de dirección: ${message.from}`,
+          );
+        }
+        return;
+      }
+
       if (message.type === "order") {
         logger.log(`Carrito recibido: ${message.orderId || "sin ID"}`);
         const order = await loadOrderWithRetry(message);
@@ -711,11 +781,14 @@ module.exports = {
   handleConversationMessage,
   handleCartConversationMessage,
   handleFulfillmentText,
+  handleLiveLocation,
   handleLocation,
   handleSystemDisableCommand,
   isAllowedMessage,
   isDirectChatId,
+  isLiveLocationMessage,
   loadOrderWithRetry,
+  liveLocationAddressReply,
   locationReceivedReply,
   phoneFromWhatsAppId,
   pickupReply,

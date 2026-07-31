@@ -10,10 +10,13 @@ const {
 const {
   handleBotControlMessage,
   handleConversationMessage,
+  handleLiveLocation,
   handleLocation,
   handleSystemDisableCommand,
   isAllowedMessage,
   isDirectChatId,
+  isLiveLocationMessage,
+  liveLocationAddressReply,
   locationReceivedReply,
   phoneFromWhatsAppId,
   pickupReply,
@@ -269,6 +272,83 @@ test("la respuesta de ubicacion no pide confirmar la ciudad", () => {
   assert.match(reply, /recibimos tu ubicacion/i);
   assert.match(reply, /validaremos el horario de entrega/i);
   assert.doesNotMatch(reply, /Brampton|Mississauga/i);
+});
+
+test("distingue ubicaciones en tiempo real de ubicaciones normales", () => {
+  assert.equal(
+    isLiveLocationMessage({
+      type: "location",
+      rawData: { type: "location", isLive: true },
+    }),
+    true,
+  );
+  assert.equal(
+    isLiveLocationMessage({ type: "live_location", rawData: {} }),
+    true,
+  );
+  assert.equal(
+    isLiveLocationMessage({
+      type: "location",
+      rawData: { duration: 900 },
+    }),
+    true,
+  );
+  assert.equal(
+    isLiveLocationMessage({
+      type: "location",
+      rawData: { lat: 43.7, lng: -79.7 },
+      location: { latitude: 43.7, longitude: -79.7 },
+    }),
+    false,
+  );
+});
+
+test("una ubicacion en tiempo real pide la direccion escrita sin avanzar", async () => {
+  const session = { step: "CART_ADDRESS" };
+  let sentReply = "";
+  const message = {
+    from: "test@lid",
+    type: "location",
+    rawData: { isLive: true },
+    reply: async (text) => {
+      sentReply = text;
+    },
+  };
+  const handled = await handleLiveLocation({
+    message,
+    store: {
+      getPendingOrderByChat: async () => {
+        throw new Error("No debe consultar pedidos si la sesión espera dirección");
+      },
+    },
+    conversationState: {
+      get: () => session,
+    },
+  });
+
+  assert.equal(handled, true);
+  assert.equal(session.step, "CART_ADDRESS");
+  assert.equal(sentReply, liveLocationAddressReply());
+  assert.match(sentReply, /confirmar en texto su dirección completa/i);
+});
+
+test("no responde a una ubicacion en tiempo real fuera del paso de direccion", async () => {
+  let replied = false;
+  const handled = await handleLiveLocation({
+    message: {
+      from: "test@lid",
+      type: "location",
+      rawData: { isLive: true },
+      reply: async () => {
+        replied = true;
+      },
+    },
+    store: { getPendingOrderByChat: async () => null },
+    conversationState: { get: () => ({ step: "COMPLETED" }) },
+  });
+
+  assert.equal(handled, false);
+  assert.equal(replied, false);
 });
 
 test("la respuesta de recogida usa el horario configurable", () => {
