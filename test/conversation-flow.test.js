@@ -77,6 +77,47 @@ test("combina productos usando produccion del dia y del dia anterior", () => {
   assert.deepEqual(options[1].previousDayProductNames, ["Concha"]);
 });
 
+test("busca fechas posteriores cuando las primeras estan cerradas", () => {
+  const availabilityConfig = {
+    ...config,
+    catalog: [
+      {
+        id: "bolobon",
+        name: "Bolobón",
+        price: 6,
+        productionWeekdays: [2, 4],
+        active: true,
+      },
+      {
+        id: "concha",
+        name: "Concha",
+        price: 3.5,
+        productionWeekdays: [3, 6],
+        active: true,
+      },
+    ],
+    schedules: [],
+    closures: [
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-12",
+      "2026-08-13",
+      "2026-08-19",
+      "2026-08-20",
+    ].map((date) => ({ date, services: ["PICKUP", "DELIVERY"] })),
+  };
+
+  const options = scheduleOptions(
+    availabilityConfig,
+    new Date("2026-07-31T15:00:00.000Z"),
+    "PICKUP",
+    ["bolobon", "concha"],
+  );
+
+  assert.equal(options[0].date, "2026-08-26");
+  assert.equal(options.length, 6);
+});
+
 test("permite elegir varios productos separados por coma", () => {
   const availabilityConfig = {
     ...config,
@@ -443,8 +484,13 @@ test("detecta agregar y actualiza cantidades solo despues de SI", () => {
   session = answer(session, "3").session;
   result = answer(session, "2");
   session = result.session;
-  assert.equal(session.step, "UPDATE_CONFIRMATION");
+  assert.equal(session.step, "UPDATE_DAY");
   assert.equal(session.quantities.bolillo, 5);
+  assert.match(result.messages[0], /Productos anotados/);
+
+  result = answer(session, "1");
+  session = result.session;
+  assert.equal(session.step, "UPDATE_CONFIRMATION");
   assert.match(result.messages[0], /TOTAL: \$30\.00/);
 
   result = answer(session, "SI");
@@ -459,6 +505,8 @@ test("NO descarta una modificacion y restaura el pedido anterior", () => {
   session = answer(session, "1").session;
   session = answer(session, "2").session;
   assert.equal(session.quantities.chocolate, 3);
+  session = answer(session, "1").session;
+  assert.equal(session.step, "UPDATE_CONFIRMATION");
 
   const result = answer(session, "NO");
   assert.equal(result.session.step, "COMPLETED");

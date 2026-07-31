@@ -200,56 +200,62 @@ function scheduleOptions(
     return legacyScheduleOptions(config, now, serviceType);
   }
 
-  return compatibleProductDates(products, now).map((availability) => {
-    const configured =
-      configuredSchedules(config).find(
-        (schedule) => schedule.weekday === availability.weekday,
-      ) || {};
-    const pickupAvailable =
-      configured.pickupEnabled !== false &&
-      !isServiceClosed(
-        { closures: config.closures || [] },
-        availability.date,
-        "PICKUP",
-      );
-    const deliveryAvailable =
-      configured.deliveryEnabled !== false &&
-      !isServiceClosed(
-        { closures: config.closures || [] },
-        availability.date,
-        "DELIVERY",
-      );
-    return {
-      ...configured,
-      id: `products-${availability.date}`,
-      name: dateLabel(availability.date),
-      weekday: availability.weekday,
-      date: availability.date,
-      pickupWindow:
-        configured.pickupWindow || config.pickupTimeWindow,
-      deliveryWindow:
-        configured.deliveryWindow || "horario por confirmar",
-      pickupAvailable,
-      deliveryAvailable,
-      freshProductNames: availability.freshProducts.map(
-        (product) => product.name,
-      ),
-      previousDayProductNames: availability.previousDayProducts.map(
-        (product) => product.name,
-      ),
-    };
-  }).filter((schedule) => {
-    if (serviceType === "PICKUP") return schedule.pickupAvailable;
-    if (serviceType === "DELIVERY") return schedule.deliveryAvailable;
-    return schedule.pickupAvailable || schedule.deliveryAvailable;
-  });
+  return compatibleProductDates(products, now, {
+    limit: 180,
+    lookaheadDays: 365,
+  })
+    .map((availability) => {
+      const configured =
+        configuredSchedules(config).find(
+          (schedule) => schedule.weekday === availability.weekday,
+        ) || {};
+      const pickupAvailable =
+        configured.pickupEnabled !== false &&
+        !isServiceClosed(
+          { closures: config.closures || [] },
+          availability.date,
+          "PICKUP",
+        );
+      const deliveryAvailable =
+        configured.deliveryEnabled !== false &&
+        !isServiceClosed(
+          { closures: config.closures || [] },
+          availability.date,
+          "DELIVERY",
+        );
+      return {
+        ...configured,
+        id: `products-${availability.date}`,
+        name: dateLabel(availability.date),
+        weekday: availability.weekday,
+        date: availability.date,
+        pickupWindow:
+          configured.pickupWindow || config.pickupTimeWindow,
+        deliveryWindow:
+          configured.deliveryWindow || "horario por confirmar",
+        pickupAvailable,
+        deliveryAvailable,
+        freshProductNames: availability.freshProducts.map(
+          (product) => product.name,
+        ),
+        previousDayProductNames: availability.previousDayProducts.map(
+          (product) => product.name,
+        ),
+      };
+    })
+    .filter((schedule) => {
+      if (serviceType === "PICKUP") return schedule.pickupAvailable;
+      if (serviceType === "DELIVERY") return schedule.deliveryAvailable;
+      return schedule.pickupAvailable || schedule.deliveryAvailable;
+    })
+    .slice(0, 6);
 }
 
 function scheduleMenu(options, title = "📅 ¿Para qué día quieres tu entrega?") {
   if (!options.length) {
     return [
       title,
-      "Por el momento no tenemos fechas disponibles. Te contactaremos para ayudarte.",
+      "Ya anotamos todos tus productos. Estamos revisando la próxima fecha de preparación y te contactaremos para confirmarla.",
     ].join("\n");
   }
   const lines = [title];
@@ -1381,7 +1387,7 @@ function advanceConversation(session, input, config, now = new Date()) {
     }
     const next = {
       ...session,
-      step: "UPDATE_CONFIRMATION",
+      step: "UPDATE_DAY",
       quantities,
     };
     const compatibleDates = scheduleOptions(
@@ -1390,30 +1396,17 @@ function advanceConversation(session, input, config, now = new Date()) {
       session.fulfillment?.type || "",
       productKeysFromQuantities(quantities),
     );
-    if (
-      session.schedule?.date &&
-      !compatibleDates.some(
-        (option) => option.date === session.schedule.date,
-      )
-    ) {
-      const rescheduled = {
-        ...next,
-        step: "UPDATE_DAY",
-        updateScheduleOptions: compatibleDates,
-      };
-      return {
-        session: rescheduled,
-        messages: [
-          scheduleMenu(
-            compatibleDates,
-            "Al cambiar los productos necesitamos ajustar la fecha. Estas opciones mantienen todo dentro de un día de producción:",
-          ),
-        ],
-      };
-    }
     return {
-      session: next,
-      messages: [updateConfirmationMessage(next, config)],
+      session: {
+        ...next,
+        updateScheduleOptions: compatibleDates,
+      },
+      messages: [
+        scheduleMenu(
+          compatibleDates,
+          "✅ Productos anotados. Elige cuándo deseas recibirlos:",
+        ),
+      ],
     };
   }
 

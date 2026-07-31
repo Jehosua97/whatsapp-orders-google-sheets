@@ -58,7 +58,7 @@ function addressPrompt() {
 
 function schedulePrompt(options, serviceType) {
   if (!options.length) {
-    return "Por el momento no tenemos fechas disponibles para esta modalidad.";
+    return "Ya anotamos todos tus productos. Estamos revisando la próxima fecha de preparación y te contactaremos para confirmarla.";
   }
   const lines = ["📅 ¿Para qué día quieres tu pedido?"];
   options.forEach((schedule, index) => {
@@ -669,8 +669,9 @@ function advanceCartConversation(session, input, config, now = new Date()) {
     const cartOrder = recalculateCartOrder(session, items);
     const next = {
       ...session,
-      step: "CART_UPDATE_CONFIRMATION",
+      step: "CART_DAY",
       cartOrder,
+      updateMode: true,
     };
     if (totalCartPieces(next) < config.minimumOrderPieces) {
       return {
@@ -687,31 +688,18 @@ function advanceCartConversation(session, input, config, now = new Date()) {
       session.fulfillment?.type || "",
       cartAvailabilityProductKeys(availabilitySession, config),
     );
-    if (
-      session.schedule?.date &&
-      !compatibleDates.some(
-        (option) => option.date === session.schedule.date,
-      )
-    ) {
-      return {
-        session: {
-          ...next,
-          step: "CART_DAY",
-          scheduleOptions: compatibleDates,
-          updateMode: true,
-        },
-        messages: [
-          [
-            "Al cambiar los productos necesitamos ajustar la fecha para conservar su frescura.",
-            "",
-            schedulePrompt(compatibleDates, session.fulfillment.type),
-          ].join("\n"),
-        ],
-      };
-    }
     return {
-      session: next,
-      messages: [cartUpdateConfirmationPrompt(next)],
+      session: {
+        ...next,
+        scheduleOptions: compatibleDates,
+      },
+      messages: [
+        [
+          "✅ Productos anotados. Estas son las próximas fechas en que estarán listos:",
+          "",
+          schedulePrompt(compatibleDates, session.fulfillment.type),
+        ].join("\n"),
+      ],
     };
   }
 

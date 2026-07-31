@@ -173,9 +173,14 @@ test("permite agregar y quitar productos de un carrito confirmado", () => {
   session = advance(session, "2").session;
   result = advance(session, "2");
   session = result.session;
-  assert.equal(session.step, "CART_UPDATE_CONFIRMATION");
+  assert.equal(session.step, "CART_DAY");
   assert.equal(session.cartOrder.items.length, 2);
   assert.equal(session.cartOrder.summary.total, 24.5);
+  assert.match(result.messages[0], /próximas fechas/);
+
+  result = advance(session, "1");
+  session = result.session;
+  assert.equal(session.step, "CART_UPDATE_CONFIRMATION");
   assert.match(result.messages[0], /2 Concha de Vainilla/);
 
   result = advance(session, "SI");
@@ -188,6 +193,7 @@ test("permite agregar y quitar productos de un carrito confirmado", () => {
   session = advance(session, "1").session;
   result = advance(session, "1");
   assert.equal(result.session.cartOrder.summary.total, 21);
+  result = advance(result.session, "1");
   assert.match(result.messages[0], /4 Conchita Chocolate/);
 });
 
@@ -206,6 +212,8 @@ test("NO descarta los cambios de productos del carrito", () => {
   session = advance(session, "2").session;
   session = advance(session, "2").session;
   assert.equal(session.cartOrder.summary.total, 24.5);
+  session = advance(session, "1").session;
+  assert.equal(session.step, "CART_UPDATE_CONFIRMATION");
 
   const result = advance(session, "NO");
   assert.equal(result.session.step, "CART_COMPLETED");
@@ -270,6 +278,9 @@ test("el manejador de carrito no guarda antes de la confirmacion final", async (
   await send("agregar");
   await send("2");
   await send("2");
+  assert.equal(replacedOrders.length, 0);
+
+  await send("1");
   assert.equal(replacedOrders.length, 0);
 
   await send("SI");

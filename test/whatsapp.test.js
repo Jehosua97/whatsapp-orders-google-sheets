@@ -379,7 +379,7 @@ test("el manejador guarda solamente despues de recibir SI", async () => {
   assert.equal(savedOrders[0].summary.total, 25);
   assert.match(replies.at(-1), /Pedido confirmado, Ana/);
 
-  for (const input of ["agregar", "3", "2", "SI"]) {
+  for (const input of ["agregar", "3", "2", "1", "SI"]) {
     await send(input);
   }
   assert.equal(replacedOrders.length, 1);
