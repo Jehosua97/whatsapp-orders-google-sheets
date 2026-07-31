@@ -7,6 +7,10 @@ const {
   scheduleOptions,
 } = require("./conversation-flow");
 const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
+const {
+  correctProductId,
+  correctProductName,
+} = require("./product-naming");
 
 function normalizeAnswer(value) {
   return String(value || "")
@@ -330,7 +334,11 @@ function recalculateCartOrder(session, items) {
 }
 
 function cleanNormalizedCart(normalized) {
-  const items = foodItems(normalized);
+  const items = foodItems(normalized).map((item) => ({
+    ...item,
+    productId: correctProductId(item.productId),
+    productName: correctProductName(item.productName),
+  }));
   if (!items.length) {
     throw new Error("El carrito no contiene productos para cocina.");
   }
@@ -347,6 +355,9 @@ function cleanNormalizedCart(normalized) {
     scheduleStatus: "PENDIENTE",
     fulfillmentConflict: false,
     kitchenStatus: "Confirmado",
+    productSummary: items
+      .map((item) => `${item.quantity} x ${item.productName}`)
+      .join(", "),
   };
   return { summary, items };
 }

@@ -93,6 +93,29 @@ test("el carrito pregunta pickup o delivery e ignora productos logisticos", () =
   assert.doesNotMatch(received, /1 Delivery en Brampton/);
 });
 
+test("corrige el nombre anterior del volovan recibido desde WhatsApp", () => {
+  const session = createCartSession(
+    normalizedCart([
+      {
+        id: "bolobon-pastor",
+        name: "Bolobón de Pastor",
+        quantity: 5,
+        price: 6000,
+        currency: "CAD",
+      },
+    ]),
+    config,
+  );
+
+  assert.equal(session.cartOrder.items[0].productId, "volovan-pastor");
+  assert.equal(session.cartOrder.items[0].productName, "Volován de Pastor");
+  assert.equal(
+    session.cartOrder.summary.productSummary,
+    "5 x Volován de Pastor",
+  );
+  assert.match(cartReceivedMessage(session, config), /Volován de Pastor/);
+});
+
 test("completa un carrito con pickup gratis solamente despues de SI", () => {
   let session = createCartSession(normalizedCart());
 

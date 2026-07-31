@@ -5,6 +5,10 @@ const path = require("node:path");
 const {
   normalizeProductionWeekdays,
 } = require("./product-availability");
+const {
+  correctProductId,
+  correctProductName,
+} = require("./product-naming");
 
 const MAX_PRODUCTS = 10;
 const SERVICE_TYPES = ["PICKUP", "DELIVERY"];
@@ -230,19 +234,13 @@ function repairCatalogEncoding(catalog, defaults) {
     defaults.map((product) => [product.id, product]),
   );
   return catalog.map((product) => {
-    const id = String(product.id || "")
-      .replace(/^bolobon-pastor$/, "volovan-pastor")
-      .replace(/^bolobon-chorizo$/, "volovan-chorizo");
-    const correctName = (value) =>
-      String(value || "")
-        .replace(/bolob[oó]nes/gi, "Volovanes")
-        .replace(/bolob[oó]n/gi, "Volován");
+    const id = correctProductId(product.id);
     const corrected = {
       ...product,
       id,
-      name: correctName(product.name),
-      promptName: correctName(product.promptName),
-      sheetName: correctName(product.sheetName),
+      name: correctProductName(product.name),
+      promptName: correctProductName(product.promptName),
+      sheetName: correctProductName(product.sheetName),
     };
     const fallback = defaultsById.get(id);
     if (!fallback) return corrected;
