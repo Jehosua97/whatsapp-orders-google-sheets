@@ -81,14 +81,32 @@ function menuProductKeys(config) {
 }
 
 function productOrderFromAnswer(answer, productKeys) {
+  const selectedIndexes = String(answer || "")
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map((value) => Number(value) - 1);
+  if (selectedIndexes.length > 1) {
+    if (
+      selectedIndexes.some(
+        (index) =>
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >= productKeys.length,
+      )
+    ) {
+      return null;
+    }
+    return [
+      ...new Set(selectedIndexes.map((index) => productKeys[index])),
+    ];
+  }
   const index = Number(answer) - 1;
   if (!Number.isInteger(index)) return null;
   if (index === productKeys.length && productKeys.length > 1) {
     return [...productKeys];
   }
   if (index < 0 || index >= productKeys.length) return null;
-  const selected = productKeys[index];
-  return [selected, ...productKeys.filter((key) => key !== selected)];
+  return [productKeys[index]];
 }
 
 function configuredSchedules(config) {
@@ -405,10 +423,10 @@ function menuMessage(name, config) {
       (product, index) => `${index + 1} - ${product.name}`,
     ),
     ...(products.length > 1
-      ? [`${products.length + 1} - Combinación (de todo)`]
+      ? [`${products.length + 1} - Armar combinación paso a paso`]
       : []),
     "",
-    "Responde con el número de tu elección:",
+    "Responde con un número o combina varios separados por coma, por ejemplo: 1,4.",
   ].join("\n");
 }
 
@@ -949,7 +967,7 @@ function advanceConversation(session, input, config, now = new Date()) {
       return {
         session,
         messages: [
-          `Por favor responde con un número del 1 al ${lastOption} para elegir una opción del menú.`,
+          `Responde con números del 1 al ${lastOption}. Para combinar productos sepáralos por coma, por ejemplo: 1,4.`,
         ],
       };
     }

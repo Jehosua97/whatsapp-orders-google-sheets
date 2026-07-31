@@ -369,7 +369,7 @@ test("el manejador guarda solamente despues de recibir SI", async () => {
       logger: { log() {} },
     });
 
-  for (const input of ["Hola", "1", "5", "0", "3", "2", "1"]) {
+  for (const input of ["Hola", "4", "5", "0", "3", "2", "1"]) {
     await send(input);
   }
   assert.equal(savedOrders.length, 0);

@@ -77,6 +77,66 @@ test("combina productos usando produccion del dia y del dia anterior", () => {
   assert.deepEqual(options[1].previousDayProductNames, ["Concha"]);
 });
 
+test("permite elegir varios productos separados por coma", () => {
+  const availabilityConfig = {
+    ...config,
+    catalog: [
+      {
+        id: "bolobon",
+        name: "Bolobón",
+        promptName: "Bolobones",
+        price: 6,
+        productionWeekdays: [2, 4],
+        active: true,
+      },
+      {
+        id: "concha",
+        name: "Concha",
+        promptName: "Conchas",
+        price: 3.5,
+        productionWeekdays: [3, 6],
+        active: true,
+      },
+    ],
+    menuPrices: { bolobon: 6, concha: 3.5 },
+    schedules: [],
+    closures: [],
+  };
+  const now = new Date("2026-07-31T15:00:00.000Z");
+  let session = newSession({
+    chatId: "test@lid",
+    customerName: "Ana",
+    config: availabilityConfig,
+    now,
+  });
+
+  session = advanceConversation(
+    session,
+    "1,2",
+    availabilityConfig,
+    now,
+  ).session;
+  assert.deepEqual(session.productOrder, ["bolobon", "concha"]);
+  session = advanceConversation(
+    session,
+    "2",
+    availabilityConfig,
+    now,
+  ).session;
+  const result = advanceConversation(
+    session,
+    "3",
+    availabilityConfig,
+    now,
+  );
+
+  assert.equal(result.session.step, "DAY");
+  assert.deepEqual(
+    result.session.scheduleOptions.slice(0, 2).map((option) => option.date),
+    ["2026-08-05", "2026-08-06"],
+  );
+});
+
 function answer(session, input) {
   return advanceConversation(session, input, config, monday);
 }
@@ -109,7 +169,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   });
 
   assert.match(menuMessage("Pancho", config), /Mucho gusto, Pancho/);
-  let result = answer(session, "1");
+  let result = answer(session, "4");
   session = result.session;
   assert.match(result.messages[0], /Conchitas de Chocolate/);
 
@@ -247,7 +307,7 @@ test("no permite continuar con menos de cinco piezas", () => {
     customerPhone: "",
     now: monday,
   });
-  session = answer(session, "1").session;
+  session = answer(session, "4").session;
   session = answer(session, "1").session;
   session = answer(session, "1").session;
   const result = answer(session, "1");
@@ -343,7 +403,7 @@ test("un delivery anterior no puede confirmarse sin direccion", () => {
     customerPhone: "19055550123",
     now: monday,
   });
-  for (const input of ["1", "5", "0", "0", "1", "2", "1"]) {
+  for (const input of ["4", "5", "0", "0", "1", "2", "1"]) {
     session = answer(session, input).session;
   }
 
