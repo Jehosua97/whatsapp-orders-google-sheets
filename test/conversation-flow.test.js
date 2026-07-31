@@ -75,6 +75,7 @@ test("combina productos usando produccion del dia y del dia anterior", () => {
   assert.deepEqual(options[0].previousDayProductNames, ["Bolobón"]);
   assert.deepEqual(options[1].freshProductNames, ["Bolobón"]);
   assert.deepEqual(options[1].previousDayProductNames, ["Concha"]);
+  assert.equal(options.length, 2);
 });
 
 test("busca fechas posteriores cuando las primeras estan cerradas", () => {
@@ -115,7 +116,7 @@ test("busca fechas posteriores cuando las primeras estan cerradas", () => {
   );
 
   assert.equal(options[0].date, "2026-08-26");
-  assert.equal(options.length, 6);
+  assert.equal(options.length, 2);
 });
 
 test("permite elegir varios productos separados por coma", () => {
@@ -229,6 +230,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   assert.equal(totalPieces(session.quantities), 8);
   assert.equal(subtotal(session.quantities, config.menuPrices), 25);
   assert.match(result.messages[0], /Subtotal: \$25\.00/);
+  assert.doesNotMatch(result.messages[0], /Vainilla/);
 
   result = answer(session, "2");
   session = result.session;
@@ -241,11 +243,12 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   assert.match(result.messages[0], /Pickup GRATIS seleccionado/);
   assert.match(result.messages[0], /154 Royal Palm Dr, Brampton/);
   assert.match(result.messages[0], /TOTAL: \$25\.00/);
+  assert.doesNotMatch(result.messages[0], /Vainilla/);
   assert.deepEqual(
     finalSummary(session, config)
       .split("\n")
       .filter((line) => /^━+$/.test(line)),
-    ["━━━━━━━━━━", "━━━━━━━━━━", "━━━━━━━━━━"],
+    ["━━━━━━━━", "━━━━━━━━", "━━━━━━━━"],
   );
 
   result = answer(session, "SI");

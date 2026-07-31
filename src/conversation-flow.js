@@ -197,7 +197,7 @@ function scheduleOptions(
         normalizeProductionWeekdays(product.productionWeekdays).length > 0,
     );
   if (!hasProductionRules) {
-    return legacyScheduleOptions(config, now, serviceType);
+    return legacyScheduleOptions(config, now, serviceType).slice(0, 2);
   }
 
   return compatibleProductDates(products, now, {
@@ -248,7 +248,7 @@ function scheduleOptions(
       if (serviceType === "DELIVERY") return schedule.deliveryAvailable;
       return schedule.pickupAvailable || schedule.deliveryAvailable;
     })
-    .slice(0, 6);
+    .slice(0, 2);
 }
 
 function scheduleMenu(options, title = "📅 ¿Para qué día quieres tu entrega?") {
@@ -259,19 +259,9 @@ function scheduleMenu(options, title = "📅 ¿Para qué día quieres tu entrega
     ].join("\n");
   }
   const lines = [title];
-  options.forEach((schedule, index) => {
+  options.slice(0, 2).forEach((schedule, index) => {
     if (schedule.freshProductNames) {
       lines.push(`${index + 1} - ${schedule.name}`);
-      if (schedule.freshProductNames.length) {
-        lines.push(
-          `   Recién hechos: ${schedule.freshProductNames.join(", ")}`,
-        );
-      }
-      if (schedule.previousDayProductNames.length) {
-        lines.push(
-          `   Producción anterior: ${schedule.previousDayProductNames.join(", ")}`,
-        );
-      }
       return;
     }
     lines.push(
@@ -478,14 +468,16 @@ function productLines(quantities, prices, includePrices, config) {
   const keys = [
     ...new Set([...configuredKeys, ...Object.keys(quantities || {})]),
   ];
-  return keys.map((productKey) => {
-    const product = productDefinition(productKey, config);
-    const quantity = Number(quantities?.[productKey] || 0);
-    const price = includePrices
-      ? ` x ${money(prices[productKey])}`
-      : "";
-    return `${product.emoji} ${product.displayName}: ${quantity}${price}`;
-  });
+  return keys
+    .filter((productKey) => Number(quantities?.[productKey] || 0) > 0)
+    .map((productKey) => {
+      const product = productDefinition(productKey, config);
+      const quantity = Number(quantities[productKey]);
+      const price = includePrices
+        ? ` x ${money(prices[productKey])}`
+        : "";
+      return `${product.emoji} ${product.displayName}: ${quantity}${price}`;
+    });
 }
 
 function orderSummary(session, config) {
@@ -494,7 +486,7 @@ function orderSummary(session, config) {
   return [
     "✅ Resumen de tu pedido:",
     ...productLines(session.quantities, config.menuPrices, true, config),
-    "━━━━━━━━━━━━━━━━━━",
+    "━━━━━━━━",
     `📦 Total piezas: ${pieces}`,
     `💵 Subtotal: ${money(orderSubtotal)}`,
     "",
@@ -539,9 +531,9 @@ function finalSummary(session, config) {
         }`;
   return [
     "📋 RESUMEN FINAL DE TU PEDIDO:",
-    "━━━━━━━━━━",
+    "━━━━━━━━",
     ...productLines(session.quantities, config.menuPrices, false, config),
-    "━━━━━━━━━━",
+    "━━━━━━━━",
     `📦 Total piezas: ${pieces}`,
     `📅 Entrega: ${session.schedule.name} ${session.schedule.timeWindow}`,
     `🏪 Tipo: ${type}`,
@@ -557,7 +549,7 @@ function finalSummary(session, config) {
     `💵 Subtotal: ${money(orderSubtotal)}`,
     `🚗 Delivery: ${money(deliveryFee)}`,
     `💰 TOTAL: ${money(orderSubtotal + deliveryFee)}`,
-    "━━━━━━━━━━",
+    "━━━━━━━━",
     "",
     "¿Confirmas tu pedido?",
     "✅ Escribe SI para confirmar",

@@ -61,7 +61,7 @@ function schedulePrompt(options, serviceType) {
     return "Ya anotamos todos tus productos. Estamos revisando la próxima fecha de preparación y te contactaremos para confirmarla.";
   }
   const lines = ["📅 ¿Para qué día quieres tu pedido?"];
-  options.forEach((schedule, index) => {
+  options.slice(0, 2).forEach((schedule, index) => {
     lines.push(
       `${index + 1} - ${schedule.name} (${
         serviceType === "PICKUP"
@@ -69,14 +69,6 @@ function schedulePrompt(options, serviceType) {
           : schedule.deliveryWindow
       })`,
     );
-    if (schedule.freshProductNames?.length) {
-      lines.push(`   Recién hechos: ${schedule.freshProductNames.join(", ")}`);
-    }
-    if (schedule.previousDayProductNames?.length) {
-      lines.push(
-        `   Producción anterior: ${schedule.previousDayProductNames.join(", ")}`,
-      );
-    }
   });
   return lines.join("\n");
 }
@@ -94,9 +86,9 @@ function cartFinalSummary(session) {
         }`;
   return [
     "📋 RESUMEN FINAL DE TU PEDIDO:",
-    "━━━━━━━━━━",
+    "━━━━━━━━",
     ...cartProductLines(session),
-    "━━━━━━━━━━",
+    "━━━━━━━━",
     `📅 Fecha: ${session.schedule.name} ${session.schedule.timeWindow}`,
     `🏪 Tipo: ${type}`,
     ...(session.fulfillment.type === "DELIVERY"
@@ -109,7 +101,7 @@ function cartFinalSummary(session) {
     `💵 Subtotal: ${money(subtotal)}`,
     `🚗 Delivery: ${money(fee)}`,
     `💰 TOTAL: ${money(subtotal + fee)}`,
-    "━━━━━━━━━━",
+    "━━━━━━━━",
   ].join("\n");
 }
 
