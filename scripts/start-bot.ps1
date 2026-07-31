@@ -16,10 +16,6 @@ try {
   }
 
   if (!$ownsMutex) {
-    Add-Content -LiteralPath $stdoutLog -Value (
-      "[{0}] Bot launcher already active; duplicate stopped." -f `
-        (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-    )
     exit 0
   }
 
