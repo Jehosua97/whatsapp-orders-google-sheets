@@ -81,9 +81,33 @@
               </button>
             </div>
           </div>
-          <div class="notice-bar">
-            <i data-lucide="info"></i>
-            <span>El bot cruza los días de producción con los días habilitados para pickup y delivery. Solo ofrece fechas cuya producción ocurre después de recibir el pedido. Recuerda mantener precios y disponibilidad sincronizados con el catálogo nativo de WhatsApp Business.</span>
+          <section class="workflow-note" aria-label="Cómo se calculan las fechas disponibles">
+            <div class="workflow-note-heading">
+              <i data-lucide="calendar-range"></i>
+              <div>
+                <strong>Producción y entrega son configuraciones diferentes</strong>
+                <p>El bot necesita ambas para calcular correctamente las fechas que ofrecerá al cliente. Configúralas y guárdalas siempre en conjunto.</p>
+              </div>
+            </div>
+            <div class="workflow-note-steps">
+              <div class="workflow-step">
+                <span>1</span>
+                <p><strong>Catálogo:</strong> indica los días en que la cocina prepara cada producto.</p>
+              </div>
+              <i class="workflow-arrow" data-lucide="arrow-right"></i>
+              <div class="workflow-step">
+                <span>2</span>
+                <p><strong>Horarios:</strong> indica los días y horas en que puedes hacer pickup o delivery.</p>
+              </div>
+            </div>
+            <div class="workflow-example">
+              <i data-lucide="lightbulb"></i>
+              <p><strong>Ejemplo:</strong> si el Volován se produce el martes, habilita pickup o delivery el martes o miércoles. Si no hay ningún servicio disponible en esos días, el bot buscará la siguiente producción que coincida con un día de entrega.</p>
+            </div>
+          </section>
+          <div class="notice-bar catalog-sync-note">
+            <i data-lucide="refresh-cw"></i>
+            <span>Recuerda mantener precios y disponibilidad sincronizados con el catálogo nativo de WhatsApp Business.</span>
           </div>
           <div class="summary-strip" id="catalogSummary"></div>
           <div class="data-table catalog-table">
@@ -115,10 +139,30 @@
               </button>
             </div>
           </div>
-          <div class="notice-bar">
-            <i data-lucide="clock-3"></i>
-            <span>Aquí defines los días y horarios en que realmente puedes entregar o recibir pickups. El bot los cruza con la producción de cada producto antes de ofrecer fechas.</span>
-          </div>
+          <section class="workflow-note" aria-label="Cómo se calculan las fechas disponibles">
+            <div class="workflow-note-heading">
+              <i data-lucide="calendar-range"></i>
+              <div>
+                <strong>Producción y entrega son configuraciones diferentes</strong>
+                <p>El bot necesita ambas para calcular correctamente las fechas que ofrecerá al cliente. Configúralas y guárdalas siempre en conjunto.</p>
+              </div>
+            </div>
+            <div class="workflow-note-steps">
+              <div class="workflow-step">
+                <span>1</span>
+                <p><strong>Catálogo:</strong> indica los días en que la cocina prepara cada producto.</p>
+              </div>
+              <i class="workflow-arrow" data-lucide="arrow-right"></i>
+              <div class="workflow-step">
+                <span>2</span>
+                <p><strong>Horarios:</strong> indica los días y horas en que puedes hacer pickup o delivery.</p>
+              </div>
+            </div>
+            <div class="workflow-example">
+              <i data-lucide="lightbulb"></i>
+              <p><strong>Ejemplo:</strong> si el Volován se produce el martes, habilita pickup o delivery el martes o miércoles. Si no hay ningún servicio disponible en esos días, el bot buscará la siguiente producción que coincida con un día de entrega.</p>
+            </div>
+          </section>
           <div id="scheduleRows" class="schedule-list"></div>
         </section>
 

@@ -193,6 +193,110 @@ button {
   line-height: 1.45;
 }
 
+.workflow-note {
+  margin-bottom: 18px;
+  border: 1px solid #bfd8e7;
+  border-left: 4px solid var(--blue);
+  background: #f4f9fc;
+  color: #214d69;
+}
+
+.workflow-note-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 16px 12px;
+}
+
+.workflow-note-heading > svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.workflow-note-heading strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #173f59;
+  font-size: 14px;
+}
+
+.workflow-note-heading p,
+.workflow-step p,
+.workflow-example p {
+  line-height: 1.45;
+}
+
+.workflow-note-heading p {
+  font-size: 12px;
+}
+
+.workflow-note-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid #d5e6f0;
+  border-bottom: 1px solid #d5e6f0;
+  background: #eaf4f9;
+}
+
+.workflow-step {
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.workflow-step > span {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--blue);
+  color: white;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.workflow-step p {
+  font-size: 12px;
+}
+
+.workflow-arrow {
+  width: 18px;
+  height: 18px;
+  color: var(--blue);
+}
+
+.workflow-example {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px 16px;
+  color: #31596f;
+}
+
+.workflow-example svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #8a6216;
+}
+
+.workflow-example p {
+  font-size: 12px;
+}
+
+.catalog-sync-note {
+  min-height: 38px;
+  padding-block: 8px;
+}
+
 .nav-count {
   min-width: 22px;
   height: 20px;
@@ -1231,6 +1335,15 @@ fieldset {
   .summary-strip,
   .metrics {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-note-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
   }
 
   .data-table {
