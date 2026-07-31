@@ -179,6 +179,36 @@ test("permite elegir varios productos separados por coma", () => {
   );
 });
 
+test("la opcion para recorrer todo el menu debe seleccionarse sola", () => {
+  const sevenProductConfig = {
+    ...config,
+    catalog: Array.from({ length: 7 }, (_, index) => ({
+      id: `producto-${index + 1}`,
+      name: `Producto ${index + 1}`,
+      promptName: `Productos ${index + 1}`,
+      emoji: "",
+      price: index + 1,
+      active: true,
+    })),
+  };
+  const session = newSession({
+    chatId: "test@lid",
+    customerName: "Ana",
+    config: sevenProductConfig,
+    now: monday,
+  });
+  const result = advanceConversation(
+    session,
+    "1,3,8",
+    sevenProductConfig,
+    monday,
+  );
+
+  assert.equal(result.session.step, "MENU");
+  assert.match(result.messages[0], /números del 1 al 7/);
+  assert.match(result.messages[0], /opción 8 se utiliza sola/);
+});
+
 function answer(session, input) {
   return advanceConversation(session, input, config, monday);
 }

@@ -937,6 +937,22 @@ function advanceConversation(session, input, config, now = new Date()) {
       session.menuProductKeys?.length
         ? session.menuProductKeys
         : menuProductKeys(config);
+    const selectedNumbers = answer
+      .split(/[\s,]+/)
+      .filter(Boolean)
+      .map(Number);
+    const combinationOption = productKeys.length + 1;
+    if (
+      selectedNumbers.length > 1 &&
+      selectedNumbers.includes(combinationOption)
+    ) {
+      return {
+        session,
+        messages: [
+          `Para combinar productos, selecciona solamente números del 1 al ${productKeys.length}, por ejemplo: 1,3. La opción ${combinationOption} se utiliza sola para recorrer todo el menú.`,
+        ],
+      };
+    }
     const productOrder = productOrderFromAnswer(answer, productKeys);
     if (!productOrder) {
       const lastOption = productKeys.length + (productKeys.length > 1 ? 1 : 0);
