@@ -37,6 +37,28 @@ const config = {
 };
 
 const monday = new Date("2026-07-27T15:00:00.000Z");
+const productionTestSchedules = [
+  {
+    id: "wednesday",
+    name: "Miércoles",
+    weekday: 3,
+    active: true,
+    pickupEnabled: true,
+    pickupWindow: "5:00 p.m. a 6:00 p.m.",
+    deliveryEnabled: true,
+    deliveryWindow: "después de las 3:00 p.m.",
+  },
+  {
+    id: "thursday",
+    name: "Jueves",
+    weekday: 4,
+    active: true,
+    pickupEnabled: true,
+    pickupWindow: "5:00 p.m. a 6:00 p.m.",
+    deliveryEnabled: true,
+    deliveryWindow: "después de las 3:00 p.m.",
+  },
+];
 
 test("combina productos usando produccion del dia y del dia anterior", () => {
   const availabilityConfig = {
@@ -57,7 +79,7 @@ test("combina productos usando produccion del dia y del dia anterior", () => {
         active: true,
       },
     ],
-    schedules: [],
+    schedules: productionTestSchedules,
     closures: [],
   };
   const options = scheduleOptions(
@@ -97,7 +119,7 @@ test("busca fechas posteriores cuando las primeras estan cerradas", () => {
         active: true,
       },
     ],
-    schedules: [],
+    schedules: productionTestSchedules,
     closures: [
       "2026-08-05",
       "2026-08-06",
@@ -117,6 +139,63 @@ test("busca fechas posteriores cuando las primeras estan cerradas", () => {
 
   assert.equal(options[0].date, "2026-08-26");
   assert.equal(options.length, 2);
+});
+
+test("cruza produccion con la modalidad disponible para cada dia", () => {
+  const availabilityConfig = {
+    ...config,
+    catalog: [
+      {
+        id: "bolobon",
+        name: "Bolobón",
+        price: 6,
+        productionWeekdays: [2, 4],
+        active: true,
+      },
+    ],
+    schedules: [
+      {
+        id: "tuesday-delivery",
+        weekday: 2,
+        active: true,
+        pickupEnabled: false,
+        pickupWindow: "",
+        deliveryEnabled: true,
+        deliveryWindow: "4:00 p.m. a 6:00 p.m.",
+      },
+      {
+        id: "wednesday-pickup",
+        weekday: 3,
+        active: true,
+        pickupEnabled: true,
+        pickupWindow: "5:00 p.m. a 6:00 p.m.",
+        deliveryEnabled: false,
+        deliveryWindow: "",
+      },
+      {
+        id: "thursday-both",
+        weekday: 4,
+        active: true,
+        pickupEnabled: true,
+        pickupWindow: "5:00 p.m. a 6:00 p.m.",
+        deliveryEnabled: true,
+        deliveryWindow: "4:00 p.m. a 6:00 p.m.",
+      },
+    ],
+    closures: [],
+  };
+  const now = new Date("2026-07-31T15:00:00.000Z");
+
+  assert.deepEqual(
+    scheduleOptions(availabilityConfig, now, "PICKUP", ["bolobon"])
+      .map((option) => option.date),
+    ["2026-08-05", "2026-08-06"],
+  );
+  assert.deepEqual(
+    scheduleOptions(availabilityConfig, now, "DELIVERY", ["bolobon"])
+      .map((option) => option.date),
+    ["2026-08-04", "2026-08-06"],
+  );
 });
 
 test("permite elegir varios productos separados por coma", () => {
@@ -141,7 +220,7 @@ test("permite elegir varios productos separados por coma", () => {
       },
     ],
     menuPrices: { bolobon: 6, concha: 3.5 },
-    schedules: [],
+    schedules: productionTestSchedules,
     closures: [],
   };
   const now = new Date("2026-07-31T15:00:00.000Z");
@@ -269,8 +348,8 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
 
   result = answer(session, "2");
   session = result.session;
-  assert.equal(session.schedule.date, "2026-07-30");
-  assert.match(result.messages[0], /Jueves 30 de julio anotado/);
+  assert.equal(session.schedule.date, "2026-08-01");
+  assert.match(result.messages[0], /Sábado 1 de agosto anotado/);
 
   result = answer(session, "1");
   session = result.session;
@@ -298,7 +377,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   assert.equal(order.summary.orderId, session.orderId);
   assert.equal(order.summary.total, 25);
   assert.equal(order.summary.grandTotal, 25);
-  assert.equal(order.summary.requestedDate, "2026-07-30");
+  assert.equal(order.summary.requestedDate, "2026-08-01");
   assert.equal(order.summary.fulfillmentType, "PICKUP");
   assert.equal(order.summary.address, "154 Royal Palm Dr, Brampton");
   assert.equal(order.summary.status, "CONFIRMADO");

@@ -206,9 +206,12 @@ function scheduleOptions(
     .map((availability) => {
       const configured =
         configuredSchedules(config).find(
-          (schedule) => schedule.weekday === availability.weekday,
-        ) || {};
+          (schedule) =>
+            schedule.active !== false &&
+            schedule.weekday === availability.weekday,
+        );
       const pickupAvailable =
+        Boolean(configured) &&
         configured.pickupEnabled !== false &&
         !isServiceClosed(
           { closures: config.closures || [] },
@@ -216,6 +219,7 @@ function scheduleOptions(
           "PICKUP",
         );
       const deliveryAvailable =
+        Boolean(configured) &&
         configured.deliveryEnabled !== false &&
         !isServiceClosed(
           { closures: config.closures || [] },
@@ -223,15 +227,15 @@ function scheduleOptions(
           "DELIVERY",
         );
       return {
-        ...configured,
+        ...(configured || {}),
         id: `products-${availability.date}`,
         name: dateLabel(availability.date),
         weekday: availability.weekday,
         date: availability.date,
         pickupWindow:
-          configured.pickupWindow || config.pickupTimeWindow,
+          configured?.pickupWindow || config.pickupTimeWindow,
         deliveryWindow:
-          configured.deliveryWindow || "horario por confirmar",
+          configured?.deliveryWindow || "horario por confirmar",
         pickupAvailable,
         deliveryAvailable,
         freshProductNames: availability.freshProducts.map(
@@ -259,17 +263,15 @@ function scheduleMenu(options, title = "📅 ¿Para qué día quieres tu entrega
   }
   const lines = [title];
   options.slice(0, 2).forEach((schedule, index) => {
-    if (schedule.freshProductNames) {
-      lines.push(`${index + 1} - ${schedule.name}`);
-      return;
-    }
-    lines.push(
-      `${index + 1} - ${schedule.name} (${schedule.pickupAvailable && schedule.deliveryAvailable
-        ? schedule.deliveryWindow || schedule.pickupWindow
-        : schedule.pickupAvailable
-          ? `Pickup: ${schedule.pickupWindow}`
-          : `Delivery: ${schedule.deliveryWindow}`})`,
-    );
+    const services = [
+      ...(schedule.pickupAvailable
+        ? [`Pickup: ${schedule.pickupWindow}`]
+        : []),
+      ...(schedule.deliveryAvailable
+        ? [`Delivery: ${schedule.deliveryWindow}`]
+        : []),
+    ];
+    lines.push(`${index + 1} - ${schedule.name} · ${services.join(" · ")}`);
   });
   return lines.join("\n");
 }
