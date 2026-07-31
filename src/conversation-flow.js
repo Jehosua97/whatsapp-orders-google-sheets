@@ -368,6 +368,16 @@ function customerLabel(name) {
   return String(name || "").trim() || "cliente";
 }
 
+function compactProductionDays(product) {
+  const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const weekdays = normalizeProductionWeekdays(
+    product.productionWeekdays,
+  );
+  return weekdays.length
+    ? ` · ${weekdays.map((weekday) => dayNames[weekday]).join("/")}`
+    : "";
+}
+
 function menuMessage(name, config) {
   const products = activeProducts(config);
   return [
@@ -377,7 +387,7 @@ function menuMessage(name, config) {
     "",
     ...products.map(
       (product) =>
-        `${product.emoji} ${product.name} - ${money(product.price)} c/u`,
+        `${product.emoji} ${product.name}${compactProductionDays(product)} · ${money(product.price)} c/u`,
     ),
     "",
     `⚠️ Pedido mínimo: ${config.minimumOrderPieces} piezas`,
