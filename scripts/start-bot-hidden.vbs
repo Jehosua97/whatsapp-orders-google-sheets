@@ -11,8 +11,9 @@ projectDirectory = fileSystem.GetParentFolderName(scriptDirectory)
 quote = Chr(34)
 
 shell.CurrentDirectory = projectDirectory
-command = "cmd.exe /d /s /c " & quote & quote & _
-  scriptDirectory & "\start-bot.cmd" & quote & quote
+command = "powershell.exe -NoProfile -NonInteractive " & _
+  "-ExecutionPolicy Bypass -WindowStyle Hidden -File " & quote & _
+  scriptDirectory & "\start-bot.ps1" & quote
 exitCode = shell.Run(command, 0, True)
 
 WScript.Quit exitCode
