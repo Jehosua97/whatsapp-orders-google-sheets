@@ -65,8 +65,8 @@ test("combina productos usando produccion del dia y del dia anterior", () => {
     ...config,
     catalog: [
       {
-        id: "bolobon",
-        name: "Bolobón",
+        id: "volovan",
+        name: "Volován",
         price: 6,
         productionWeekdays: [2, 4],
         active: true,
@@ -86,7 +86,7 @@ test("combina productos usando produccion del dia y del dia anterior", () => {
     availabilityConfig,
     new Date("2026-07-31T15:00:00.000Z"),
     "PICKUP",
-    ["bolobon", "concha"],
+    ["volovan", "concha"],
   );
 
   assert.deepEqual(
@@ -94,8 +94,8 @@ test("combina productos usando produccion del dia y del dia anterior", () => {
     ["2026-08-05", "2026-08-06"],
   );
   assert.deepEqual(options[0].freshProductNames, ["Concha"]);
-  assert.deepEqual(options[0].previousDayProductNames, ["Bolobón"]);
-  assert.deepEqual(options[1].freshProductNames, ["Bolobón"]);
+  assert.deepEqual(options[0].previousDayProductNames, ["Volován"]);
+  assert.deepEqual(options[1].freshProductNames, ["Volován"]);
   assert.deepEqual(options[1].previousDayProductNames, ["Concha"]);
   assert.equal(options.length, 2);
 });
@@ -105,8 +105,8 @@ test("busca fechas posteriores cuando las primeras estan cerradas", () => {
     ...config,
     catalog: [
       {
-        id: "bolobon",
-        name: "Bolobón",
+        id: "volovan",
+        name: "Volován",
         price: 6,
         productionWeekdays: [2, 4],
         active: true,
@@ -134,7 +134,7 @@ test("busca fechas posteriores cuando las primeras estan cerradas", () => {
     availabilityConfig,
     new Date("2026-07-31T15:00:00.000Z"),
     "PICKUP",
-    ["bolobon", "concha"],
+    ["volovan", "concha"],
   );
 
   assert.equal(options[0].date, "2026-08-26");
@@ -146,8 +146,8 @@ test("cruza produccion con la modalidad disponible para cada dia", () => {
     ...config,
     catalog: [
       {
-        id: "bolobon",
-        name: "Bolobón",
+        id: "volovan",
+        name: "Volován",
         price: 6,
         productionWeekdays: [2, 4],
         active: true,
@@ -187,12 +187,12 @@ test("cruza produccion con la modalidad disponible para cada dia", () => {
   const now = new Date("2026-07-31T15:00:00.000Z");
 
   assert.deepEqual(
-    scheduleOptions(availabilityConfig, now, "PICKUP", ["bolobon"])
+    scheduleOptions(availabilityConfig, now, "PICKUP", ["volovan"])
       .map((option) => option.date),
     ["2026-08-05", "2026-08-06"],
   );
   assert.deepEqual(
-    scheduleOptions(availabilityConfig, now, "DELIVERY", ["bolobon"])
+    scheduleOptions(availabilityConfig, now, "DELIVERY", ["volovan"])
       .map((option) => option.date),
     ["2026-08-04", "2026-08-06"],
   );
@@ -203,9 +203,9 @@ test("permite elegir varios productos separados por coma", () => {
     ...config,
     catalog: [
       {
-        id: "bolobon",
-        name: "Bolobón",
-        promptName: "Bolobones",
+        id: "volovan",
+        name: "Volován",
+        promptName: "Volovanes",
         price: 6,
         productionWeekdays: [2, 4],
         active: true,
@@ -219,7 +219,7 @@ test("permite elegir varios productos separados por coma", () => {
         active: true,
       },
     ],
-    menuPrices: { bolobon: 6, concha: 3.5 },
+    menuPrices: { volovan: 6, concha: 3.5 },
     schedules: productionTestSchedules,
     closures: [],
   };
@@ -237,7 +237,7 @@ test("permite elegir varios productos separados por coma", () => {
     availabilityConfig,
     now,
   ).session;
-  assert.deepEqual(session.productOrder, ["bolobon", "concha"]);
+  assert.deepEqual(session.productOrder, ["volovan", "concha"]);
   session = advanceConversation(
     session,
     "2",

@@ -105,20 +105,20 @@ function defaultState(baseConfig) {
         active: true,
       },
       {
-        id: "bolobon-pastor",
-        name: "Bolobón de Pastor",
-        promptName: "Bolobones de Pastor",
-        sheetName: "Bolobón de Pastor",
+        id: "volovan-pastor",
+        name: "Volován de Pastor",
+        promptName: "Volovanes de Pastor",
+        sheetName: "Volován de Pastor",
         emoji: "🥐",
         price: 6,
         productionWeekdays: [2, 4],
         active: true,
       },
       {
-        id: "bolobon-chorizo",
-        name: "Bolobón de Chorizo",
-        promptName: "Bolobones de Chorizo",
-        sheetName: "Bolobón de Chorizo",
+        id: "volovan-chorizo",
+        name: "Volován de Chorizo",
+        promptName: "Volovanes de Chorizo",
+        sheetName: "Volován de Chorizo",
         emoji: "🥐",
         price: 6,
         productionWeekdays: [2, 4],
@@ -230,20 +230,34 @@ function repairCatalogEncoding(catalog, defaults) {
     defaults.map((product) => [product.id, product]),
   );
   return catalog.map((product) => {
-    const fallback = defaultsById.get(product.id);
-    if (!fallback) return product;
+    const id = String(product.id || "")
+      .replace(/^bolobon-pastor$/, "volovan-pastor")
+      .replace(/^bolobon-chorizo$/, "volovan-chorizo");
+    const correctName = (value) =>
+      String(value || "")
+        .replace(/bolob[oó]nes/gi, "Volovanes")
+        .replace(/bolob[oó]n/gi, "Volován");
+    const corrected = {
+      ...product,
+      id,
+      name: correctName(product.name),
+      promptName: correctName(product.promptName),
+      sheetName: correctName(product.sheetName),
+    };
+    const fallback = defaultsById.get(id);
+    if (!fallback) return corrected;
     const invalidEmoji =
-      !product.emoji ||
-      /^[?]+$/.test(String(product.emoji)) ||
-      String(product.emoji).includes("�");
+      !corrected.emoji ||
+      /^[?]+$/.test(String(corrected.emoji)) ||
+      String(corrected.emoji).includes("�");
     const repairText = (value, key) =>
       String(value || "").includes("�") ? fallback[key] : value;
     return {
-      ...product,
-      emoji: invalidEmoji ? fallback.emoji : product.emoji,
-      name: repairText(product.name, "name"),
-      promptName: repairText(product.promptName, "promptName"),
-      sheetName: repairText(product.sheetName, "sheetName"),
+      ...corrected,
+      emoji: invalidEmoji ? fallback.emoji : corrected.emoji,
+      name: repairText(corrected.name, "name"),
+      promptName: repairText(corrected.promptName, "promptName"),
+      sheetName: repairText(corrected.sheetName, "sheetName"),
     };
   });
 }

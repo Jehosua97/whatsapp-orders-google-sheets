@@ -8,8 +8,8 @@ const {
 } = require("../src/product-availability");
 
 const tuesdayThursday = {
-  id: "bolobon",
-  name: "Bolobón",
+  id: "volovan",
+  name: "Volován",
   productionWeekdays: [2, 4],
 };
 const wednesdaySaturday = {
@@ -66,11 +66,11 @@ test("una combinacion ofrece solamente fechas compatibles", () => {
   );
   assert.deepEqual(
     dates[0].previousDayProducts.map((product) => product.id),
-    ["bolobon"],
+    ["volovan"],
   );
   assert.deepEqual(
     dates[1].freshProducts.map((product) => product.id),
-    ["bolobon"],
+    ["volovan"],
   );
   assert.deepEqual(
     dates[1].previousDayProducts.map((product) => product.id),

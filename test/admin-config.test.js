@@ -65,6 +65,49 @@ test("usa el mismo nombre del producto en la hoja de cocina", () => {
   assert.deepEqual(product.productionWeekdays, [3, 6]);
 });
 
+test("migra el nombre anterior del volovan en catalogos guardados", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lacenaduria-"));
+  const file = path.join(directory, "admin.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      catalog: [
+        {
+          id: "bolobon-pastor",
+          name: "Bolobón de Pastor",
+          promptName: "Bolobones de Pastor",
+          sheetName: "Bolobón de Pastor",
+          emoji: "🥐",
+          price: 6,
+          productionWeekdays: [2, 4],
+          active: true,
+        },
+      ],
+      schedules: [
+        {
+          id: "tuesday",
+          name: "Martes",
+          weekday: 2,
+          active: true,
+          pickupEnabled: true,
+          pickupWindow: "5:00 p.m.",
+          deliveryEnabled: true,
+          deliveryWindow: "3:00 p.m.",
+        },
+      ],
+      closures: [],
+      notifications: [],
+    }),
+  );
+
+  const product = new AdminConfigStore(file, baseConfig).getState().catalog[0];
+
+  assert.equal(product.id, "volovan-pastor");
+  assert.equal(product.name, "Volován de Pastor");
+  assert.equal(product.promptName, "Volovanes de Pastor");
+  assert.equal(product.sheetName, "Volován de Pastor");
+});
+
 test("exige produccion para cada producto disponible", () => {
   assert.throws(
     () =>
