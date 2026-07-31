@@ -76,11 +76,23 @@ function compatibleProductDates(
   const results = [];
   for (let offset = 0; offset <= lookaheadDays; offset += 1) {
     const date = addDays(today, offset);
-    const availability = products.map((product) => ({
-      product,
-      freshness: productAvailability(product, date),
-    }));
-    if (availability.some((item) => !item.freshness)) continue;
+    const availability = products.map((product) => {
+      const freshness = productAvailability(product, date);
+      return {
+        product,
+        freshness,
+        productionDate:
+          freshness === "PREVIOUS_DAY" ? addDays(date, -1) : date,
+      };
+    });
+    if (
+      availability.some(
+        (item) =>
+          !item.freshness || item.productionDate < today,
+      )
+    ) {
+      continue;
+    }
 
     results.push({
       date,

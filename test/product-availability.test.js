@@ -32,6 +32,23 @@ test("un producto solo dura el dia de produccion y el siguiente", () => {
   assert.equal(productAvailability(tuesdayThursday, "2026-08-08"), "");
 });
 
+test("no ofrece produccion anterior a la llegada del pedido", () => {
+  const dates = compatibleProductDates(
+    [tuesdayThursday],
+    new Date("2026-07-31T15:00:00.000Z"),
+    { limit: 2 },
+  );
+
+  assert.deepEqual(
+    dates.map((option) => option.date),
+    ["2026-08-04", "2026-08-05"],
+  );
+  assert.doesNotMatch(
+    dates.map((option) => option.date).join(","),
+    /2026-07-31/,
+  );
+});
+
 test("una combinacion ofrece solamente fechas compatibles", () => {
   const dates = compatibleProductDates(
     [tuesdayThursday, wednesdaySaturday],
