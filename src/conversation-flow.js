@@ -9,7 +9,6 @@ const {
   compatibleProductDates,
   dateLabel,
   normalizeProductionWeekdays,
-  WEEKDAY_NAMES,
 } = require("./product-availability");
 
 const PRODUCTS = {
@@ -369,31 +368,8 @@ function customerLabel(name) {
   return String(name || "").trim() || "cliente";
 }
 
-function productionCalendarLines(products) {
-  const groups = new Map();
-  for (const product of products) {
-    const weekdays = normalizeProductionWeekdays(
-      product.productionWeekdays,
-    );
-    if (!weekdays.length) continue;
-    const key = weekdays.join(",");
-    const current = groups.get(key) || { weekdays, names: [] };
-    current.names.push(product.name);
-    groups.set(key, current);
-  }
-  return [...groups.values()].map(({ weekdays, names }) => {
-    const dayNames = weekdays.map((weekday) => WEEKDAY_NAMES[weekday]);
-    const days =
-      dayNames.length === 1
-        ? dayNames[0]
-        : `${dayNames.slice(0, -1).join(", ")} y ${dayNames.at(-1)}`;
-    return `${days}: ${names.join(", ")}`;
-  });
-}
-
 function menuMessage(name, config) {
   const products = activeProducts(config);
-  const productionLines = productionCalendarLines(products);
   return [
     `Mucho gusto, ${customerLabel(name)} 😊`,
     "",
@@ -403,14 +379,6 @@ function menuMessage(name, config) {
       (product) =>
         `${product.emoji} ${product.name} - ${money(product.price)} c/u`,
     ),
-    ...(productionLines.length
-      ? [
-          "",
-          "📅 DÍAS DE PRODUCCIÓN:",
-          ...productionLines,
-          "También puedes pedir cada producto para el día siguiente a su producción.",
-        ]
-      : []),
     "",
     `⚠️ Pedido mínimo: ${config.minimumOrderPieces} piezas`,
     "",

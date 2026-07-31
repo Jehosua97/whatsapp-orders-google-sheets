@@ -211,6 +211,7 @@ test("recorre el flujo completo de pickup del ejemplo", () => {
   });
 
   assert.match(menuMessage("Pancho", config), /Mucho gusto, Pancho/);
+  assert.doesNotMatch(menuMessage("Pancho", config), /DÍAS DE PRODUCCIÓN/);
   let result = answer(session, "4");
   session = result.session;
   assert.match(result.messages[0], /Conchitas de Chocolate/);
