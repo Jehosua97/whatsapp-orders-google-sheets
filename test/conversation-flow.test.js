@@ -712,3 +712,60 @@ test("el estado conversacional persiste en disco", () => {
   reloaded.set("test@lid", null);
   assert.equal(reloaded.get("test@lid"), null);
 });
+
+test("limpia automaticamente una conversacion incompleta que expiro", () => {
+  const file = path.join(
+    os.tmpdir(),
+    `lacenaduria-expired-${process.pid}-${Date.now()}.json`,
+  );
+  let now = new Date("2026-07-27T12:00:00.000Z");
+  const options = {
+    pendingTimeoutMs: 60 * 60 * 1000,
+    now: () => now,
+  };
+  const state = new ConversationStateStore(file, options);
+  state.set(
+    "test@lid",
+    newSession({
+      chatId: "test@lid",
+      customerName: "Ana",
+      customerPhone: "",
+      config,
+      now,
+    }),
+  );
+
+  now = new Date("2026-07-27T14:00:00.000Z");
+  const recovered = new ConversationStateStore(file, options);
+
+  assert.equal(recovered.get("test@lid"), null);
+  assert.equal(recovered.lastRecoveryReport.clearedConversation, 1);
+  assert.deepEqual(recovered.healthSummary(), { total: 0, pending: 0 });
+});
+
+test("conserva los pedidos terminados aunque haya pasado el timeout", () => {
+  const file = path.join(
+    os.tmpdir(),
+    `lacenaduria-completed-${process.pid}-${Date.now()}.json`,
+  );
+  let now = new Date("2026-07-27T12:00:00.000Z");
+  const options = {
+    pendingTimeoutMs: 60 * 60 * 1000,
+    now: () => now,
+  };
+  const state = new ConversationStateStore(file, options);
+  const session = newSession({
+    chatId: "test@lid",
+    customerName: "Ana",
+    customerPhone: "",
+    config,
+    now,
+  });
+  state.set("test@lid", { ...session, step: "COMPLETED" });
+
+  now = new Date("2026-07-29T12:00:00.000Z");
+  const recovered = new ConversationStateStore(file, options);
+
+  assert.equal(recovered.get("test@lid").step, "COMPLETED");
+  assert.deepEqual(recovered.healthSummary(), { total: 1, pending: 0 });
+});

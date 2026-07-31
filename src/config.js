@@ -79,6 +79,10 @@ function readConfig() {
       process.env.CONVERSATION_STATE_FILE ||
         ".data/conversation-state.json",
     ),
+    conversationSessionTimeoutHours: number(
+      "CONVERSATION_SESSION_TIMEOUT_HOURS",
+      24,
+    ),
     adminConfigFile: path.resolve(
       process.env.ADMIN_CONFIG_FILE || ".data/admin-config.json",
     ),

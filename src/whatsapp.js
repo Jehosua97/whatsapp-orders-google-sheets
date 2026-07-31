@@ -549,7 +549,10 @@ function createWhatsAppClient({
   const messageQueues = new Map();
   const conversationState =
     suppliedConversationState ||
-    new ConversationStateStore(config.conversationStateFile);
+    new ConversationStateStore(config.conversationStateFile, {
+      pendingTimeoutMs:
+        config.conversationSessionTimeoutHours * 60 * 60 * 1000,
+    });
   const pauseState =
     suppliedPauseState || new BotPauseState(config.botPauseStateFile);
   const client = new Client({

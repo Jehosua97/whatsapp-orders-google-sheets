@@ -16,7 +16,22 @@ async function main() {
   );
   const conversationState = new ConversationStateStore(
     config.conversationStateFile,
+    {
+      pendingTimeoutMs:
+        config.conversationSessionTimeoutHours * 60 * 60 * 1000,
+    },
   );
+  const recoveredSessions = conversationState.lastRecoveryReport;
+  if (
+    recoveredSessions.resetCart ||
+    recoveredSessions.clearedConversation ||
+    recoveredSessions.removedInvalid
+  ) {
+    console.log(
+      "Recuperacion de conversaciones:",
+      JSON.stringify(recoveredSessions),
+    );
+  }
 
   console.log("Conectando con Google Sheets...");
   await store.initialize();

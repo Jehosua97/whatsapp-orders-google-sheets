@@ -288,3 +288,31 @@ test("el manejador de carrito no guarda antes de la confirmacion final", async (
   assert.equal(replacedOrders[0].summary.total, 24.5);
   assert.match(replies.at(-1), /consultar tu pedido escribe HOLA/i);
 });
+
+test("recupera un carrito incompleto que expiro y permite continuarlo", () => {
+  const file = path.join(
+    os.tmpdir(),
+    `lacenaduria-stale-cart-${process.pid}-${Date.now()}.json`,
+  );
+  let now = new Date("2026-07-27T12:00:00.000Z");
+  const options = {
+    pendingTimeoutMs: 60 * 60 * 1000,
+    now: () => now,
+  };
+  const state = new ConversationStateStore(file, options);
+  let session = createCartSession(normalizedCart(), config);
+  session = advance(session, "2").session;
+  session = advance(session, "1").session;
+  assert.equal(session.step, "CART_ADDRESS");
+  state.set("14378781645@c.us", session);
+
+  now = new Date("2026-07-27T14:00:00.000Z");
+  const recoveredState = new ConversationStateStore(file, options);
+  const recovered = recoveredState.get("14378781645@c.us");
+
+  assert.equal(recoveredState.lastRecoveryReport.resetCart, 1);
+  assert.equal(recovered.step, "CART_FULFILLMENT");
+  assert.equal(recovered.fulfillment, null);
+  assert.equal(recovered.cartOrder.items[0].quantity, 5);
+  assert.equal(advance(recovered, "1").session.step, "CART_DAY");
+});

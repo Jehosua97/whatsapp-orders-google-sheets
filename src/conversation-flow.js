@@ -1693,10 +1693,44 @@ function buildTextOrder(session, confirmationMessage, config) {
   return normalized;
 }
 
+const TERMINAL_CONVERSATION_STEPS = new Set([
+  "COMPLETED",
+  "CANCELED",
+  "CART_COMPLETED",
+  "CART_CANCELED",
+]);
+const DEFAULT_PENDING_SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+
+function resetStaleCartSession(session, timestamp) {
+  const recovered = {
+    ...session,
+    step: "CART_FULFILLMENT",
+    fulfillment: null,
+    deliveryAddress: "",
+    addressType: "",
+    schedule: null,
+    scheduleOptions: [],
+    updateMode: false,
+    recoveredAt: timestamp,
+    stateUpdatedAt: timestamp,
+  };
+  delete recovered.updateBackup;
+  delete recovered.updateAction;
+  delete recovered.updateProductChoices;
+  delete recovered.updateProductChoice;
+  return recovered;
+}
+
 class ConversationStateStore {
-  constructor(file) {
+  constructor(file, options = {}) {
     this.file = file;
+    this.pendingTimeoutMs =
+      Number(options.pendingTimeoutMs) > 0
+        ? Number(options.pendingTimeoutMs)
+        : DEFAULT_PENDING_SESSION_TIMEOUT_MS;
+    this.now = options.now || (() => new Date());
     this.sessions = this.load();
+    this.lastRecoveryReport = this.recoverStaleSessions();
   }
 
   load() {
@@ -1708,11 +1742,17 @@ class ConversationStateStore {
   }
 
   get(chatId) {
+    this.recoverSession(chatId);
     return this.sessions[chatId] || null;
   }
 
   set(chatId, session) {
-    if (session) this.sessions[chatId] = session;
+    if (session) {
+      this.sessions[chatId] = {
+        ...session,
+        stateUpdatedAt: this.now().toISOString(),
+      };
+    }
     else delete this.sessions[chatId];
     this.save();
   }
@@ -1721,16 +1761,93 @@ class ConversationStateStore {
     let updated = false;
     for (const [chatId, session] of Object.entries(this.sessions)) {
       if (String(session.orderId) !== String(orderId)) continue;
-      this.sessions[chatId] = updater({ ...session });
+      this.sessions[chatId] = {
+        ...updater({ ...session }),
+        stateUpdatedAt: this.now().toISOString(),
+      };
       updated = true;
     }
     if (updated) this.save();
     return updated;
   }
 
+  recoverSession(chatId) {
+    const session = this.sessions[chatId];
+    if (!session) return "unchanged";
+    if (typeof session !== "object" || typeof session.step !== "string") {
+      delete this.sessions[chatId];
+      this.save();
+      return "removedInvalid";
+    }
+    if (TERMINAL_CONVERSATION_STEPS.has(session.step)) {
+      return "unchanged";
+    }
+
+    const updatedAt = Date.parse(
+      session.stateUpdatedAt || session.createdAt || "",
+    );
+    if (
+      Number.isFinite(updatedAt) &&
+      this.now().getTime() - updatedAt <= this.pendingTimeoutMs
+    ) {
+      return "unchanged";
+    }
+
+    if (
+      session.source === "CART" &&
+      session.cartOrder?.summary &&
+      Array.isArray(session.cartOrder?.items) &&
+      session.cartOrder.items.length > 0
+    ) {
+      this.sessions[chatId] = resetStaleCartSession(
+        session,
+        this.now().toISOString(),
+      );
+      this.save();
+      return "resetCart";
+    }
+
+    delete this.sessions[chatId];
+    this.save();
+    return "clearedConversation";
+  }
+
+  recoverStaleSessions() {
+    const report = {
+      resetCart: 0,
+      clearedConversation: 0,
+      removedInvalid: 0,
+    };
+    for (const chatId of Object.keys(this.sessions)) {
+      const action = this.recoverSession(chatId);
+      if (Object.hasOwn(report, action)) report[action] += 1;
+    }
+    return report;
+  }
+
+  healthSummary() {
+    const sessions = Object.values(this.sessions);
+    return {
+      total: sessions.length,
+      pending: sessions.filter(
+        (session) =>
+          !TERMINAL_CONVERSATION_STEPS.has(session?.step),
+      ).length,
+    };
+  }
+
   save() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(this.file, JSON.stringify(this.sessions, null, 2));
+    const temporaryFile = `${this.file}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(
+        temporaryFile,
+        `${JSON.stringify(this.sessions, null, 2)}\n`,
+      );
+      fs.renameSync(temporaryFile, this.file);
+    } finally {
+      if (fs.existsSync(temporaryFile)) fs.unlinkSync(temporaryFile);
+    }
   }
 }
 

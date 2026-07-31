@@ -156,6 +156,7 @@ function createAdminServer({
       status: "ok",
       whatsapp: whatsapp.lacenaduriaStatus || "CONNECTING",
       uptimeSeconds: Math.floor(process.uptime()),
+      conversations: conversationState.healthSummary(),
     });
   });
   app.use("/api", basicAuthMiddleware(config.adminPassword));
