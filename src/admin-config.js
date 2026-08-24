@@ -13,6 +13,7 @@ const {
 const MAX_PRODUCTS = 10;
 const SERVICE_TYPES = ["PICKUP", "DELIVERY"];
 const AUTOMATION_MODES = ["NORMAL", "TESTING"];
+const DEFAULT_PROMOTIONS = { freeBramptonDelivery: true };
 const WEEKDAY_NAMES = [
   "Domingo",
   "Lunes",
@@ -77,6 +78,7 @@ function defaultState(baseConfig) {
   ];
   return {
     version: 2,
+    botEnabled: true,
     catalog: [
       {
         id: "chocolate",
@@ -178,6 +180,7 @@ function defaultState(baseConfig) {
       allowedPhones: configuredAllowedPhones,
       blockedPhones: [],
     },
+    promotions: { ...DEFAULT_PROMOTIONS },
     updatedAt: new Date().toISOString(),
   };
 }
@@ -401,6 +404,7 @@ class AdminConfigStore {
         ...defaults,
         ...parsed,
         version: 2,
+        botEnabled: parsed.botEnabled !== false,
         catalog: normalizeCatalog(
           repairCatalogEncoding(parsed.catalog, defaults.catalog),
         ),
@@ -414,6 +418,12 @@ class AdminConfigStore {
         automation: normalizeAutomation(
           parsed.automation || defaults.automation,
         ),
+        promotions: {
+          ...DEFAULT_PROMOTIONS,
+          ...(parsed.promotions || {}),
+          freeBramptonDelivery:
+            parsed.promotions?.freeBramptonDelivery !== false,
+        },
       };
     } catch {
       const state = defaultState(this.baseConfig);
@@ -450,9 +460,17 @@ class AdminConfigStore {
         state.catalog.map((product) => [product.id, product.price]),
       ),
       automationMode: state.automation.mode,
+      botEnabled: state.botEnabled,
       automationAllowedChatIds: new Set(),
       automationAllowedPhones: new Set(state.automation.allowedPhones),
       automationBlockedPhones: new Set(state.automation.blockedPhones),
+      promotions: state.promotions,
+      deliveryFees: {
+        ...this.baseConfig.deliveryFees,
+        brampton: state.promotions.freeBramptonDelivery
+          ? 0
+          : this.baseConfig.deliveryFees.brampton,
+      },
     };
   }
 
@@ -474,6 +492,24 @@ class AdminConfigStore {
     return this.persist({
       ...this.state,
       automation: normalizeAutomation(automation),
+    });
+  }
+
+  updateBotEnabled(enabled) {
+    return this.persist({
+      ...this.state,
+      botEnabled: enabled === true,
+    });
+  }
+
+  updatePromotions(promotions = {}) {
+    return this.persist({
+      ...this.state,
+      promotions: {
+        ...this.state.promotions,
+        freeBramptonDelivery:
+          promotions.freeBramptonDelivery === true,
+      },
     });
   }
 

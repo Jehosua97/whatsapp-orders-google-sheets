@@ -17,6 +17,10 @@
         </div>
       </div>
       <div class="header-actions">
+        <button class="bot-power-button" id="botPowerButton" type="button" title="Pausar el bot para todos los chats">
+          <i data-lucide="pause"></i>
+          <span id="botPowerLabel">Pausar bot</span>
+        </button>
         <a
           class="button secondary sheet-link"
           href="https://docs.google.com/spreadsheets/d/1xwmmhwVtwABnEr5EVnBrjJOfqqqbffvMYpcrLOP-OCo/edit?gid=1709533431#gid=1709533431"
@@ -55,6 +59,14 @@
         <button class="nav-item" data-view="automation">
           <i data-lucide="shield"></i>
           <span>Control del bot</span>
+        </button>
+        <button class="nav-item" data-view="promotions">
+          <i data-lucide="badge-percent"></i>
+          <span>Promociones</span>
+        </button>
+        <button class="nav-item" data-view="help">
+          <i data-lucide="circle-help"></i>
+          <span>Ayuda</span>
         </button>
       </nav>
 
@@ -297,6 +309,75 @@
                 </button>
               </form>
               <div class="phone-list" id="blockedPhoneRows"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="promotionsView">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Promociones temporales</p>
+              <h1>Delivery</h1>
+            </div>
+          </div>
+          <section class="settings-card">
+            <div>
+              <h2>Delivery gratis en Brampton</h2>
+              <p>Al activarlo, el bot mostrará $0.00 y no sumará la tarifa de Brampton al total. Mississauga conserva su tarifa normal.</p>
+              <p><strong>El cambio se aplica inmediatamente a pedidos nuevos.</strong></p>
+            </div>
+            <label class="switch" title="Activar delivery gratis en Brampton">
+              <input id="freeBramptonDelivery" type="checkbox" />
+              <span></span>
+            </label>
+          </section>
+          <button class="button primary" id="savePromotionsButton">
+            <i data-lucide="save"></i>
+            Guardar y aplicar promoción
+          </button>
+        </section>
+
+        <section class="view" id="helpView">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Guía rápida</p>
+              <h1>Cómo funciona el bot</h1>
+            </div>
+          </div>
+          <div class="help-grid">
+            <section class="settings-card help-card">
+              <i data-lucide="message-circle"></i>
+              <div><h2>1. Inicio automático</h2><p>El bot inicia automáticamente cuando una persona envía cualquier mensaje en un chat individual. No es necesario escribir una palabra especial.</p></div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="shield-check"></i>
+              <div><h2>2. Activar el bot para clientes</h2><p>En <strong>Control del bot</strong>, selecciona <strong>Producción</strong> y presiona <strong>Guardar y aplicar</strong>. En “Solo pruebas” únicamente responden los números permitidos.</p></div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="pause-circle"></i>
+              <div><h2>Control global siempre visible</h2><p>El botón de la esquina superior derecha pausa o continúa el bot para <strong>todos los chats</strong>. El estado se conserva aunque se reinicie la computadora. Para pausar solamente una conversación, usa <strong>STOP BOT</strong> dentro de ese chat.</p></div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="wifi"></i>
+              <div><h2>3. Verificar WhatsApp</h2><p>Confirma que la parte superior indique <strong>WhatsApp conectado</strong>. Si está desconectado, el bot no puede recibir ni responder mensajes.</p></div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="shopping-cart"></i>
+              <div><h2>4. Pedidos por carrito</h2><p>Si el cliente envía un carrito del catálogo de WhatsApp, el bot comienza el flujo automáticamente y pregunta pickup o delivery; no necesita escribir la palabra de inicio.</p></div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="message-square-off"></i>
+              <div>
+                <h2>5. Pausar y continuar un chat</h2>
+                <p>Desde la cuenta de WhatsApp del negocio, abre la conversación que deseas atender manualmente y envía <strong>STOP BOT</strong>. El bot dejará de responder solamente en ese chat; los demás clientes seguirán siendo atendidos normalmente.</p>
+                <p>Cuando termines la atención manual, envía <strong>CONTINUE BOT</strong> en el mismo chat. El bot se reactivará y volverá a enviar automáticamente su último mensaje o pregunta pendiente, para que el cliente pueda continuar de manera natural.</p>
+                <p><strong>Ejemplo:</strong> si el bot había preguntado “¿En qué ciudad necesitas delivery?”, esa pregunta aparecerá nuevamente al enviar <strong>CONTINUE BOT</strong>.</p>
+                <p>Los comandos deben enviarse solos, exactamente como aparecen arriba, desde la cuenta del negocio. El cliente no puede pausar ni reactivar el bot.</p>
+              </div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="users-round"></i>
+              <div><h2>6. Nunca responde en grupos</h2><p>El bot acepta únicamente conversaciones individuales. Los grupos, estados, listas de difusión y canales se ignoran.</p></div>
             </section>
           </div>
         </section>

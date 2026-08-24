@@ -15,6 +15,7 @@ const {
 
 const baseConfig = {
   menuPrices: { chocolate: 3.5, vanilla: 3.5, bolillo: 2.5 },
+  deliveryFees: { brampton: 5, mississauga: 8 },
   pickupTimeWindow: "5:00 p.m. a 6:00 p.m.",
   deliveryWindows: {
     wednesday: "después de las 3:00 PM",
@@ -48,6 +49,19 @@ test("el catalogo administrativo alimenta la configuracion del bot", () => {
     new AdminConfigStore(file, baseConfig).getState().catalog[0].name,
     "Taco al pastor",
   );
+});
+
+test("la promocion de Brampton cambia la tarifa del bot y se puede desactivar", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lacenaduria-promo-"));
+  const file = path.join(directory, "admin.json");
+  const store = new AdminConfigStore(file, baseConfig);
+
+  assert.equal(store.runtimeConfig().deliveryFees.brampton, 0);
+  assert.equal(store.runtimeConfig().deliveryFees.mississauga, 8);
+
+  store.updatePromotions({ freeBramptonDelivery: false });
+  assert.equal(store.runtimeConfig().deliveryFees.brampton, 5);
+  assert.equal(store.getState().promotions.freeBramptonDelivery, false);
 });
 
 test("usa el mismo nombre del producto en la hoja de cocina", () => {
@@ -146,6 +160,17 @@ test("guarda los modos de automatizacion y sus listas de telefonos", () => {
   assert.equal(runtime.automationMode, "NORMAL");
   assert.equal(runtime.automationAllowedPhones.has("14378781645"), true);
   assert.equal(runtime.automationBlockedPhones.has("16470000000"), true);
+});
+
+test("el control global del bot se guarda y llega a la configuracion activa", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lacenaduria-bot-control-"));
+  const file = path.join(directory, "admin.json");
+  const store = new AdminConfigStore(file, baseConfig);
+
+  assert.equal(store.runtimeConfig().botEnabled, true);
+  store.updateBotEnabled(false);
+  assert.equal(store.runtimeConfig().botEnabled, false);
+  assert.equal(new AdminConfigStore(file, baseConfig).getState().botEnabled, false);
 });
 
 test("un numero no puede estar permitido y bloqueado", () => {

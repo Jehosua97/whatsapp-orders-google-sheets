@@ -35,6 +35,7 @@ const {
 const { formatMoney, normalizeOrder } = require("./order");
 
 const ORDER_RETRY_DELAYS_MS = [0, 1000, 2500];
+const CLOSED_ORDER_STATUSES = new Set(["CANCELADO", "ENTREGADO"]);
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -68,11 +69,52 @@ function canonicalPhone(value) {
   return digits.length === 10 ? `1${digits}` : digits;
 }
 
+function isClosedOrder(order) {
+  if (!order) return false;
+  const values = [order.status, order.kitchenStatus].map((value) =>
+    String(value || "").trim().toUpperCase(),
+  );
+  return values.some((value) => CLOSED_ORDER_STATUSES.has(value));
+}
+
+async function resetClosedOrderSession({
+  chatId,
+  session,
+  store,
+  conversationState,
+  logger = console,
+}) {
+  if (!session || !["COMPLETED", "CANCELED"].includes(session.step)) {
+    return session;
+  }
+  if (typeof store.getOrder !== "function") return session;
+
+  try {
+    if (typeof store.syncKitchenView === "function") {
+      await store.syncKitchenView();
+    }
+    const order = await store.getOrder(session.orderId);
+    if (!isClosedOrder(order)) return session;
+
+    conversationState.set(chatId, null);
+    logger.log(
+      `Conversacion reiniciada porque el pedido ${session.orderId} esta cerrado en Excel.`,
+    );
+    return null;
+  } catch (error) {
+    logger.error(
+      `No se pudo verificar en Excel el pedido ${session.orderId}:`,
+      error,
+    );
+    return session;
+  }
+}
+
 function isDirectChatId(value) {
   return /@(?:c\.us|s\.whatsapp\.net|lid)$/i.test(String(value || ""));
 }
 
-function handleBotControlMessage({
+async function handleBotControlMessage({
   message,
   pauseState,
   logger = console,
@@ -88,6 +130,12 @@ function handleBotControlMessage({
   } else {
     pauseState.resume(chatId);
     logger.log(`Bot reactivado manualmente para: ${chatId}`);
+    const lastMessage = pauseState.lastMessage?.(chatId) || "";
+    if (lastMessage && typeof message.getChat === "function") {
+      const chat = await message.getChat();
+      await chat.sendMessage(lastMessage);
+      logger.log(`Ultimo mensaje del bot reenviado para: ${chatId}`);
+    }
   }
   return command;
 }
@@ -375,6 +423,13 @@ async function handleConversationMessage({
   logger = console,
 }) {
   let session = conversationState.get(message.from);
+  session = await resetClosedOrderSession({
+    chatId: message.from,
+    session,
+    store,
+    conversationState,
+    logger,
+  });
   if (session?.source === "CART") {
     return handleCartConversationMessage({
       message,
@@ -634,6 +689,11 @@ function createWhatsAppClient({
       });
       if (systemCommandHandled) return;
 
+      if (runtimeConfig.botEnabled === false) {
+        logger.log(`Mensaje ignorado porque el bot esta pausado globalmente: ${message.from}`);
+        return;
+      }
+
       const allowed = await isAllowedMessage({
         client,
         chatId: message.from,
@@ -654,6 +714,18 @@ function createWhatsAppClient({
           `Mensaje ignorado porque el bot esta pausado para: ${message.from}`,
         );
         return;
+      }
+
+      if (
+        typeof message.reply === "function" &&
+        typeof pauseState.rememberLastMessage === "function"
+      ) {
+        const reply = message.reply.bind(message);
+        message.reply = async (content, ...args) => {
+          const sent = await reply(content, ...args);
+          pauseState.rememberLastMessage(message.from, content);
+          return sent;
+        };
       }
 
       if (isLiveLocationMessage(message)) {
@@ -765,9 +837,9 @@ function createWhatsAppClient({
     });
   });
 
-  client.on("message_create", (message) => {
+  client.on("message_create", async (message) => {
     try {
-      handleBotControlMessage({ message, pauseState, logger });
+      await handleBotControlMessage({ message, pauseState, logger });
     } catch (error) {
       logger.error("No se pudo cambiar la pausa del bot:", error);
     }
@@ -788,6 +860,7 @@ module.exports = {
   handleLocation,
   handleSystemDisableCommand,
   isAllowedMessage,
+  isClosedOrder,
   isDirectChatId,
   isLiveLocationMessage,
   loadOrderWithRetry,
@@ -797,4 +870,5 @@ module.exports = {
   pickupReply,
   reconcileCustomerPhones,
   resolvePhoneNumber,
+  resetClosedOrderSession,
 };

@@ -29,19 +29,38 @@ class BotPauseState {
   }
 
   isPaused(chatId) {
-    return Boolean(this.state[String(chatId || "")]);
+    return Boolean(this.state[String(chatId || "")]?.pausedAt);
   }
 
   pause(chatId, now = new Date()) {
     this.state[String(chatId)] = {
+      ...(this.state[String(chatId)] || {}),
       pausedAt: now.toISOString(),
     };
     this.persist();
   }
 
   resume(chatId) {
-    delete this.state[String(chatId)];
+    const key = String(chatId);
+    if (!this.state[key]) return;
+    delete this.state[key].pausedAt;
+    if (!this.state[key].lastMessage) delete this.state[key];
     this.persist();
+  }
+
+  rememberLastMessage(chatId, message) {
+    const text = String(message || "").trim();
+    if (!text) return;
+    const key = String(chatId);
+    this.state[key] = {
+      ...(this.state[key] || {}),
+      lastMessage: text,
+    };
+    this.persist();
+  }
+
+  lastMessage(chatId) {
+    return String(this.state[String(chatId)]?.lastMessage || "");
   }
 
   persist() {

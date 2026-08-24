@@ -14,6 +14,7 @@ const {
   handleLocation,
   handleSystemDisableCommand,
   isAllowedMessage,
+  isClosedOrder,
   isDirectChatId,
   isLiveLocationMessage,
   liveLocationAddressReply,
@@ -22,6 +23,12 @@ const {
   pickupReply,
   resolvePhoneNumber,
 } = require("../src/whatsapp");
+
+test("reconoce pedidos cerrados por estado general o de cocina", () => {
+  assert.equal(isClosedOrder({ kitchenStatus: "Entregado" }), true);
+  assert.equal(isClosedOrder({ status: "CANCELADO" }), true);
+  assert.equal(isClosedOrder({ kitchenStatus: "Confirmado" }), false);
+});
 
 test("extrae un telefono de un ID telefonico de WhatsApp", () => {
   assert.equal(phoneFromWhatsAppId("14165550123@c.us"), "14165550123");
@@ -44,7 +51,7 @@ test("solo reconoce conversaciones individuales como chats directos", () => {
   assert.equal(isDirectChatId("12345@newsletter"), false);
 });
 
-test("solo el negocio puede pausar y reactivar un chat individual", () => {
+test("solo el negocio puede pausar y reactivar un chat individual", async () => {
   const paused = new Set();
   const pauseState = {
     pause: (chatId) => paused.add(chatId),
@@ -53,7 +60,7 @@ test("solo el negocio puede pausar y reactivar un chat individual", () => {
   const logger = { log() {} };
 
   assert.equal(
-    handleBotControlMessage({
+    await handleBotControlMessage({
       message: {
         fromMe: false,
         from: "customer@lid",
@@ -67,7 +74,7 @@ test("solo el negocio puede pausar y reactivar un chat individual", () => {
   assert.equal(paused.size, 0);
 
   assert.equal(
-    handleBotControlMessage({
+    await handleBotControlMessage({
       message: {
         fromMe: true,
         to: "customer@lid",
@@ -81,7 +88,7 @@ test("solo el negocio puede pausar y reactivar un chat individual", () => {
   assert.equal(paused.has("customer@lid"), true);
 
   assert.equal(
-    handleBotControlMessage({
+    await handleBotControlMessage({
       message: {
         fromMe: true,
         to: "customer@lid",
@@ -392,6 +399,57 @@ test("conserva la ciudad del catalogo al recibir una ubicacion", async () => {
   assert.equal(savedPatch.city, "BRAMPTON");
   assert.equal(savedPatch.deliveryFee, 5);
   assert.equal(sentReply, locationReceivedReply());
+});
+
+test("inicia un flujo nuevo cuando Excel marca el pedido anterior como entregado", async () => {
+  const chatId = "14370000000@c.us";
+  let session = {
+    orderId: "CHAT-ANTERIOR",
+    chatId,
+    customerName: "Ana",
+    customerPhone: "14370000000",
+    step: "COMPLETED",
+  };
+  let syncCount = 0;
+  const replies = [];
+  await handleConversationMessage({
+    message: {
+      from: chatId,
+      body: "Hola",
+      getContact: async () => ({
+        pushname: "Ana",
+        number: "14370000000",
+      }),
+      reply: async (text) => replies.push(text),
+    },
+    client: {},
+    store: {
+      syncKitchenView: async () => { syncCount += 1; },
+      getOrder: async () => ({
+        orderId: "CHAT-ANTERIOR",
+        kitchenStatus: "Entregado",
+      }),
+    },
+    config: {
+      minimumOrderPieces: 5,
+      menuPrices: { chocolate: 3.5, vanilla: 3.5, bolillo: 2.5 },
+      deliveryWindows: {
+        wednesday: "despues de las 3:00 PM",
+        saturday: "despues de las 10:00 AM",
+      },
+      deliveryFees: { brampton: 5, mississauga: 8 },
+    },
+    conversationState: {
+      get: () => session,
+      set: (_id, value) => { session = value; },
+    },
+    logger: { log() {}, error() {} },
+  });
+
+  assert.equal(syncCount, 1);
+  assert.equal(session.step, "MENU");
+  assert.notEqual(session.orderId, "CHAT-ANTERIOR");
+  assert.match(replies[0], /Ana/);
 });
 
 test("el manejador guarda solamente despues de recibir SI", async () => {

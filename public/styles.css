@@ -103,6 +103,27 @@ button {
   gap: 14px;
 }
 
+.bot-power-button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid #acd2ba;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-weight: 750;
+}
+
+.bot-power-button.paused {
+  border-color: #efb5b1;
+  background: var(--red-soft);
+  color: var(--red-dark);
+}
+
+.bot-power-button svg { width: 17px; height: 17px; }
+
 .connection-status {
   gap: 7px;
   color: var(--muted);
@@ -1289,6 +1310,14 @@ fieldset {
     display: none;
   }
 
+  .bot-power-button {
+    width: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .bot-power-button span { display: none; }
+
   .sheet-link {
     width: 38px;
     padding: 0;
@@ -1310,7 +1339,7 @@ fieldset {
     z-index: 30;
     height: 64px;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     padding: 5px 8px;
     border-top: 1px solid var(--line);
     border-right: 0;
@@ -1462,3 +1491,21 @@ fieldset {
     justify-content: flex-start;
   }
 }
+
+.settings-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.settings-card h2 { margin: 0 0 8px; }
+.settings-card p { margin: 4px 0; color: var(--muted); line-height: 1.55; }
+.help-grid { display: grid; gap: 14px; }
+.help-card { justify-content: flex-start; align-items: flex-start; margin: 0; }
+.help-card > svg { flex: 0 0 auto; color: var(--primary); }

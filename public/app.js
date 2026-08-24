@@ -478,6 +478,23 @@ function renderAll() {
   renderSchedules();
   renderRescheduling();
   renderAutomation();
+  document.querySelector("#freeBramptonDelivery").checked =
+    state.dashboard.promotions?.freeBramptonDelivery !== false;
+  renderBotPower();
+}
+
+function renderBotPower() {
+  const enabled = state.dashboard.botEnabled !== false;
+  const button = document.querySelector("#botPowerButton");
+  button.classList.toggle("paused", !enabled);
+  button.title = enabled
+    ? "Pausar el bot para todos los chats"
+    : "Continuar el bot para todos los chats";
+  button.innerHTML = `
+    <i data-lucide="${enabled ? "pause" : "play"}"></i>
+    <span id="botPowerLabel">${enabled ? "Pausar bot" : "Continuar bot"}</span>
+  `;
+  icons();
 }
 
 async function loadDashboard(showMessage = false) {
@@ -485,6 +502,10 @@ async function loadDashboard(showMessage = false) {
   setLoading(button, true);
   try {
     state.dashboard = await api("/api/dashboard");
+    state.dashboard.promotions = {
+      freeBramptonDelivery:
+        state.dashboard.promotions?.freeBramptonDelivery !== false,
+    };
     state.savedAutomation = clone(state.dashboard.automation);
     renderAll();
     if (showMessage) showToast("Datos actualizados.");
@@ -817,6 +838,52 @@ document.querySelector("#saveAutomationButton").addEventListener("click", async 
 
 document.querySelector("#refreshButton").addEventListener("click", () => {
   loadDashboard(true);
+});
+
+document.querySelector("#botPowerButton").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const enable = state.dashboard.botEnabled === false;
+  const action = enable ? "continuar" : "pausar";
+  if (!window.confirm(`¿Deseas ${action} el bot para todos los chats?`)) return;
+  setLoading(button, true);
+  try {
+    const result = await api("/api/bot-control", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: enable }),
+    });
+    state.dashboard.botEnabled = result.enabled;
+    renderBotPower();
+    showToast(result.enabled
+      ? "El bot está activo para recibir mensajes."
+      : "El bot está pausado para todos los chats.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    setLoading(button, false);
+  }
+});
+
+document.querySelector("#savePromotionsButton").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  setLoading(button, true);
+  try {
+    const result = await api("/api/promotions", {
+      method: "PUT",
+      body: JSON.stringify({
+        promotions: {
+          freeBramptonDelivery: document.querySelector("#freeBramptonDelivery").checked,
+        },
+      }),
+    });
+    state.dashboard.promotions = result.promotions;
+    showToast(result.promotions.freeBramptonDelivery
+      ? "Delivery gratis en Brampton activado."
+      : "Delivery gratis en Brampton desactivado.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    setLoading(button, false);
+  }
 });
 
 loadDashboard();

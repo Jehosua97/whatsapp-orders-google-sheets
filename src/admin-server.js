@@ -196,6 +196,8 @@ function createAdminServer({
         closures,
         notifications: state.notifications.slice(-50).reverse(),
         automation: state.automation,
+        botEnabled: state.botEnabled,
+        promotions: state.promotions,
         upcomingDates: upcomingDates(state, orders),
         testMode: state.automation.mode === "TESTING",
         whatsappStatus: whatsapp.lacenaduriaStatus || "CONNECTING",
@@ -228,6 +230,24 @@ function createAdminServer({
     try {
       const state = configStore.updateAutomation(request.body.automation);
       response.json({ automation: state.automation });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/bot-control", (request, response, next) => {
+    try {
+      const state = configStore.updateBotEnabled(request.body.enabled);
+      response.json({ enabled: state.botEnabled });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/promotions", (request, response, next) => {
+    try {
+      const state = configStore.updatePromotions(request.body.promotions);
+      response.json({ promotions: state.promotions });
     } catch (error) {
       next(error);
     }
