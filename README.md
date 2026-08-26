@@ -22,6 +22,10 @@ flowchart LR
     Client --> Normalize[Order normalization]
     Normalize --> Dedup[Order ID deduplication]
     Dedup --> Sheets[Google Sheets API]
+    Client --> AI[OpenAI intent and wording]
+    AI --> Rules[Deterministic business rules]
+    Rules --> Dedup
+    AI -. timeout or error .-> Rules
     Sheets --> Kitchen[(Kitchen orders view)]
     Sheets --> Internal[(Hidden system worksheets)]
     Dedup --> Reply[Customer confirmation]
@@ -61,6 +65,10 @@ final total, and writes to Sheets only after the customer replies `SI`.
 - Customer confirmation only after a successful Sheets write.
 - Local operations panel for catalog, schedules, closures, and rescheduling.
 - Runtime configuration shared by the web panel and WhatsApp messages.
+- Natural-language understanding through OpenAI Responses API.
+- Structured AI output translated into deterministic order-flow actions.
+- Grounded response rewriting with automatic fallback to verified messages.
+- Explicit confirmation barrier: AI cannot save a new or changed order by itself.
 - Node.js native test suite and GitHub Actions CI.
 - Secrets, authentication state, QR images, and runtime logs excluded from Git.
 
@@ -153,6 +161,11 @@ WHATSAPP_AUTOMATION_ALLOWED_PHONES=
 AUTO_REPLY_COOLDOWN_HOURS=24
 AUTO_REPLY_STATE_FILE=.data/auto-reply-state.json
 CONVERSATION_STATE_FILE=.data/conversation-state.json
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.4-mini
+OPENAI_TIMEOUT_MS=20000
+AI_ASSISTANT_ENABLED=true
+AI_REWRITE_RESPONSES=true
 MINIMUM_ORDER_PIECES=5
 CHOCOLATE_CONCHA_PRICE=3.50
 VANILLA_CONCHA_PRICE=3.50
@@ -209,6 +222,37 @@ orders remain only as inactive history. Delivery orders require an address
 before final confirmation. Conversation progress is stored in
 `.data/conversation-state.json`, which is excluded from Git.
 
+### AI-assisted conversations
+
+When `OPENAI_API_KEY` is configured and the **Inteligencia** switch is enabled
+in the operations panel, customers can write naturally instead of following
+the numeric wording literally. For example:
+
+```text
+Buenas tardes, quiero una docena de conchas de vainilla para pickup.
+```
+
+The model does not write orders or calculate business values. It returns a
+structured interpretation that is passed through the existing deterministic
+flow. The application remains the authority for active catalog products,
+quantities, minimum order, production dates, closures, fulfillment, delivery
+fees, addresses, totals, and Google Sheets writes.
+
+The server stops every multi-step interpretation at the final summary. A new
+customer message with an explicit confirmation is always required before an
+order is saved. Addresses proposed by the model are accepted only when copied
+from the customer's current message. If OpenAI times out, rejects the key, or
+returns unusable output, the verified non-AI flow continues automatically.
+
+Create a project API key at `https://platform.openai.com/api-keys`, add it only
+to the local `.env`, and restart the hidden bot task. The key is never returned
+by the dashboard or written to `.data/admin-config.json`.
+
+Use **Inteligencia → Probar conexión** after changing the key, billing, or
+project limits. Authentication, quota, timeout, and service failures open a
+temporary circuit breaker so customer messages immediately use the safe flow
+instead of repeatedly waiting for a failing provider.
+
 WhatsApp catalog carts use the same confirmation rules. After receiving a
 cart, the bot:
 
@@ -261,6 +305,8 @@ The panel supports:
 - Testing and normal automation modes with allowed and blocked phone lists.
 - A policy-protected `Notify and reschedule` action that sends the WhatsApp
   notice and updates Google Sheets and conversation state.
+- An **Inteligencia** view that shows whether OpenAI is configured, the active
+  model, and whether natural-language processing is enabled.
 
 Runtime changes are stored in `.data/admin-config.json`, which is excluded
 from Git. New WhatsApp messages read this configuration immediately. The
@@ -357,6 +403,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall-wind
   when deployed to a cloud environment.
 - Customer phone numbers and order details are operational data and require
   appropriate retention and access controls.
+- Customer messages sent for AI interpretation are processed by the configured
+  OpenAI API project. API requests use `store: false`, and the API key remains
+  only in `.env`.
 - The operations panel binds to `127.0.0.1` by default. Remote exposure
   requires authentication, TLS, and network access controls.
 - The service never trusts a client-provided calculated total as a payment

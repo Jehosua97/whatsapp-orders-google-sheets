@@ -7,6 +7,12 @@ const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
 const { BotPauseState, botControlCommand } = require("./bot-pause-state");
 const { isAllowedChat } = require("./auto-reply-state");
 const {
+  guardNaturalPlan,
+  isConfirmationStep,
+  validatePlannedInput,
+  verifiedKnowledgeReply,
+} = require("./ai-assistant");
+const {
   disableScheduledBot,
   requestGracefulShutdown,
 } = require("./system-control");
@@ -36,9 +42,16 @@ const { formatMoney, normalizeOrder } = require("./order");
 
 const ORDER_RETRY_DELAYS_MS = [0, 1000, 2500];
 const CLOSED_ORDER_STATUSES = new Set(["CANCELADO", "ENTREGADO"]);
+const AI_DISCLOSURE = "🤖 Aviso: Mensajes generados con IA";
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function withAiDisclosure(message, enabled) {
+  const content = String(message || "").trim();
+  if (!content || !enabled || content.startsWith(AI_DISCLOSURE)) return content;
+  return `${AI_DISCLOSURE}\n\n${content}`;
 }
 
 async function loadOrderWithRetry(message) {
@@ -413,12 +426,345 @@ async function handleFulfillmentText({ message, store, config }) {
   return true;
 }
 
+function sessionProgressSignature(session) {
+  if (!session) return "NONE";
+  return JSON.stringify({
+    step: session.step,
+    productIndex: session.productIndex,
+    quantities: session.quantities,
+    schedule: session.schedule?.date || "",
+    fulfillment: session.fulfillment,
+    deliveryAddress: session.deliveryAddress,
+    updateAction: session.updateAction,
+    updateProductKey: session.updateProductKey,
+    updateProductChoice: session.updateProductChoice?.productId,
+  });
+}
+
+async function naturalTurnPlan({
+  aiAssistant,
+  customerMessage,
+  session,
+  config,
+  lastBotMessage,
+  logger = console,
+}) {
+  if (!aiAssistant?.enabled?.(config)) return null;
+  try {
+    const plan = await aiAssistant.interpretTurn({
+      customerMessage,
+      session,
+      config,
+      lastBotMessage,
+    });
+    return guardNaturalPlan(plan, customerMessage, session, config);
+  } catch (error) {
+    logger.error(
+      `La IA no pudo interpretar el mensaje; se usa el flujo seguro: ${error.message}`,
+    );
+    return null;
+  }
+}
+
+async function groundedReply({
+  aiAssistant,
+  customerMessage,
+  verifiedReply,
+  session,
+  config,
+  logger = console,
+}) {
+  const source = String(verifiedReply || "").trim();
+  if (!source || !aiAssistant?.enabled?.(config)) return source;
+  try {
+    return await aiAssistant.rewriteVerifiedReply({
+      customerMessage,
+      verifiedReply: source,
+      session,
+      config,
+    });
+  } catch (error) {
+    logger.error(
+      `La IA no pudo redactar la respuesta; se envía el texto verificado: ${error.message}`,
+    );
+    return source;
+  }
+}
+
+function planReply(plan, verifiedPrompt = "") {
+  const reply = String(plan?.reply || "").trim();
+  const prompt = String(verifiedPrompt || "").trim();
+  if (!reply) {
+    return prompt || "¿Me puedes dar un poco más de información para ayudarte?";
+  }
+  if (!prompt || normalizedForComparison(reply).includes(normalizedForComparison(prompt))) {
+    return reply;
+  }
+  return `${reply}\n\n${prompt}`;
+}
+
+function normalizedForComparison(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function aiInputs(plan) {
+  if (
+    plan?.kind !== "ADVANCE" ||
+    Number(plan.confidence || 0) < 0.55 ||
+    !Array.isArray(plan.inputs)
+  ) {
+    return [];
+  }
+  return plan.inputs.slice(0, 8);
+}
+
+function canonicalAiInput(step, input, session) {
+  const value = String(input || "").trim();
+  const normalized = normalizedForComparison(value);
+  if (["FULFILLMENT", "UPDATE_FULFILLMENT", "CART_FULFILLMENT"].includes(step)) {
+    if (/\b(PICKUP|RECOGER|RECOGIDA|PASAR POR|VOY POR)\b/.test(normalized)) {
+      return "1";
+    }
+    if (/\b(DELIVERY|ENTREGA|DOMICILIO|A DOMICILIO)\b/.test(normalized)) {
+      return "2";
+    }
+  }
+  if (["CITY", "UPDATE_CITY", "CART_CITY"].includes(step)) {
+    if (/\bBRAMPTON\b/.test(normalized)) return "1";
+    if (/\bMISSISSAUGA\b/.test(normalized)) return "2";
+  }
+  if (["DAY", "UPDATE_DAY", "CART_DAY"].includes(step) && !/^\d+$/.test(value)) {
+    const options =
+      session.scheduleOptions || session.updateScheduleOptions || [];
+    const index = options.findIndex((option) => {
+      const name = normalizedForComparison(option.name);
+      const date = normalizedForComparison(option.date);
+      return (
+        (name && normalized.includes(name)) ||
+        (date && normalized.includes(date))
+      );
+    });
+    if (index >= 0) return String(index + 1);
+  }
+  if (isConfirmationStep(step)) {
+    if (/\b(SI|YES|CONFIRMO|CONFIRMAR|DE ACUERDO|OK|DALE)\b/.test(normalized)) {
+      return "SI";
+    }
+    if (/\b(NO|CANCELAR|CONSERVAR|MANTENER)\b/.test(normalized)) {
+      return "NO";
+    }
+  }
+  return value;
+}
+
+function safeDeferredInput(item) {
+  const value = String(item?.value || "").trim();
+  const normalized = normalizedForComparison(value);
+  if (!value || /^\d+$/.test(value) || Number(item?.attempts || 0) > 2) {
+    return false;
+  }
+  return !/\b(SI|YES|NO|CONFIRMO|CONFIRMAR|CANCELAR|CANCELO)\b/.test(
+    normalized,
+  );
+}
+
+function attachDeferredInputs(session, queue) {
+  if (!session) return session;
+  const next = { ...session };
+  const deferred = queue.filter(safeDeferredInput).slice(0, 6);
+  if (deferred.length) next.aiDeferredInputs = deferred;
+  else delete next.aiDeferredInputs;
+  return next;
+}
+
+function runConversationInputs({
+  session,
+  inputs,
+  customerMessage,
+  config,
+  now = new Date(),
+}) {
+  const initialStep = session.step;
+  const initialOrderId = session.orderId;
+  let current = session;
+  let result = null;
+  let applied = 0;
+  let queue = [
+    ...inputs.map((value) => ({
+      value: String(value || ""),
+      sourceMessage: customerMessage,
+      attempts: 0,
+    })),
+    ...(session.aiDeferredInputs || []).map((item) =>
+      typeof item === "string"
+        ? { value: item, sourceMessage: "", attempts: 1 }
+        : item,
+    ),
+  ];
+
+  while (queue.length) {
+    if (!current) break;
+    if (
+      applied > 0 &&
+      isConfirmationStep(current.step) &&
+      !isConfirmationStep(initialStep)
+    ) {
+      break;
+    }
+    const item = queue.shift();
+    const canonicalInput = canonicalAiInput(
+      current.step,
+      item.value,
+      current,
+    );
+    if (
+      !validatePlannedInput({
+        step: current.step,
+        input: canonicalInput,
+        customerMessage: item.sourceMessage || customerMessage,
+        session: current,
+      })
+    ) {
+      queue.unshift({
+        ...item,
+        attempts: Number(item.attempts || 0) + 1,
+      });
+      break;
+    }
+    const before = sessionProgressSignature(current);
+    result = advanceConversation(
+      current,
+      canonicalInput,
+      config,
+      now,
+    );
+    applied += 1;
+    current = result.session;
+    if (
+      result.completed ||
+      result.updated ||
+      result.orderCanceled ||
+      result.canceled ||
+      !current
+    ) {
+      queue = [];
+      break;
+    }
+    if (before === sessionProgressSignature(current)) break;
+    if (
+      isConfirmationStep(current.step) &&
+      !isConfirmationStep(initialStep)
+    ) {
+      break;
+    }
+  }
+  if (current?.orderId !== initialOrderId) queue = [];
+  current = attachDeferredInputs(current, queue);
+  if (result?.session) result = { ...result, session: current };
+  return { result, applied, session: current };
+}
+
+function runCartInputs({
+  session,
+  inputs,
+  customerMessage,
+  config,
+  now = new Date(),
+}) {
+  const initialStep = session.step;
+  const initialOrderId = session.orderId;
+  let current = session;
+  let result = null;
+  let applied = 0;
+  let queue = [
+    ...inputs.map((value) => ({
+      value: String(value || ""),
+      sourceMessage: customerMessage,
+      attempts: 0,
+    })),
+    ...(session.aiDeferredInputs || []).map((item) =>
+      typeof item === "string"
+        ? { value: item, sourceMessage: "", attempts: 1 }
+        : item,
+    ),
+  ];
+
+  while (queue.length) {
+    if (!current) break;
+    if (
+      applied > 0 &&
+      isConfirmationStep(current.step) &&
+      !isConfirmationStep(initialStep)
+    ) {
+      break;
+    }
+    const item = queue.shift();
+    const canonicalInput = canonicalAiInput(
+      current.step,
+      item.value,
+      current,
+    );
+    if (
+      !validatePlannedInput({
+        step: current.step,
+        input: canonicalInput,
+        customerMessage: item.sourceMessage || customerMessage,
+        session: current,
+      })
+    ) {
+      queue.unshift({
+        ...item,
+        attempts: Number(item.attempts || 0) + 1,
+      });
+      break;
+    }
+    const before = sessionProgressSignature(current);
+    result = advanceCartConversation(
+      current,
+      canonicalInput,
+      config,
+      now,
+    );
+    applied += 1;
+    current = result.session;
+    if (
+      result.completed ||
+      result.updated ||
+      result.orderCanceled ||
+      result.canceled ||
+      result.startTextOrder ||
+      !current
+    ) {
+      queue = [];
+      break;
+    }
+    if (before === sessionProgressSignature(current)) break;
+    if (
+      isConfirmationStep(current.step) &&
+      !isConfirmationStep(initialStep)
+    ) {
+      break;
+    }
+  }
+  if (current?.orderId !== initialOrderId) queue = [];
+  current = attachDeferredInputs(current, queue);
+  if (result?.session) result = { ...result, session: current };
+  return { result, applied, session: current };
+}
+
 async function handleConversationMessage({
   message,
   client,
   store,
   config,
   conversationState,
+  aiAssistant,
+  lastBotMessage = "",
   input,
   logger = console,
 }) {
@@ -436,10 +782,14 @@ async function handleConversationMessage({
       store,
       config,
       conversationState,
+      aiAssistant,
+      lastBotMessage,
       input,
       logger,
     });
   }
+  const customerMessage = String(input ?? message.body ?? "");
+  let createdSession = false;
   if (!session) {
     const customer = await customerIdentity(message, client);
     session = newSession({
@@ -449,26 +799,126 @@ async function handleConversationMessage({
       config,
     });
     conversationState.set(message.from, session);
-    await message.reply(menuMessage(session.customerName, config));
+    createdSession = true;
+  }
+  const discloseAi =
+    createdSession && Boolean(aiAssistant?.enabled?.(config));
+
+  const plan = await naturalTurnPlan({
+    aiAssistant,
+    customerMessage,
+    session,
+    config,
+    lastBotMessage,
+    logger,
+  });
+  const plannedInputs = aiInputs(plan);
+  const currentPrompt =
+    lastBotMessage ||
+    (createdSession || session.step === "MENU"
+      ? menuMessage(session.customerName, config)
+      : "");
+
+  if (plan && !plannedInputs.length) {
+    conversationState.set(message.from, session);
+    const verifiedAnswer =
+      plan.kind === "ANSWER"
+        ? verifiedKnowledgeReply(plan, session, config)
+        : plan.reply;
+    const factualReply = planReply(
+      { ...plan, reply: verifiedAnswer },
+      currentPrompt,
+    );
+    const reply =
+      plan.kind === "ANSWER"
+        ? await groundedReply({
+            aiAssistant,
+            customerMessage,
+            verifiedReply: factualReply,
+            session,
+            config,
+            logger,
+          })
+        : factualReply;
+    await message.reply(withAiDisclosure(reply, discloseAi));
     return true;
   }
 
-  const result = advanceConversation(
-    session,
-    input ?? message.body,
-    config,
-    new Date(),
-  );
+  let execution;
+  if (plannedInputs.length) {
+    execution = runConversationInputs({
+      session,
+      inputs: plannedInputs,
+      customerMessage,
+      config,
+    });
+  } else if (createdSession) {
+    const reply = await groundedReply({
+      aiAssistant,
+      customerMessage,
+      verifiedReply: currentPrompt,
+      session,
+      config,
+      logger,
+    });
+    await message.reply(withAiDisclosure(reply, discloseAi));
+    return true;
+  } else {
+    execution = {
+      result: advanceConversation(
+        session,
+        customerMessage,
+        config,
+        new Date(),
+      ),
+      applied: 1,
+    };
+  }
+
+  if (!execution.result || execution.applied === 0) {
+    conversationState.set(message.from, execution.session || session);
+    await message.reply(
+      withAiDisclosure(
+        planReply(plan, currentPrompt || menuMessage(session.customerName, config)),
+        discloseAi,
+      ),
+    );
+    return true;
+  }
+
+  const result = execution.result;
+  const startsNewConversation =
+    discloseAi ||
+    Boolean(
+      result.session?.orderId &&
+        session.orderId &&
+        result.session.orderId !== session.orderId &&
+        aiAssistant?.enabled?.(config),
+    );
+  const sendVerified = async (verifiedReply, replySession = result.session) => {
+    const reply = await groundedReply({
+      aiAssistant,
+      customerMessage,
+      verifiedReply,
+      session: replySession,
+      config,
+      logger,
+    });
+    if (reply) {
+      await message.reply(withAiDisclosure(reply, startsNewConversation));
+    }
+  };
 
   if (result.orderCanceled) {
-    await store.updateOrder(session.orderId, {
+    const orderId = result.session?.orderId || session.orderId;
+    await store.updateOrder(orderId, {
       status: "CANCELADO",
       kitchenStatus: "Cancelado",
       customerNotes: "Pedido cancelado por el cliente en WhatsApp",
     });
     conversationState.set(message.from, result.session);
-    logger.log(`Pedido conversacional cancelado: ${session.orderId}`);
-    await message.reply(
+    logger.log(`Pedido conversacional cancelado: ${orderId}`);
+    await sendVerified(
       [
         "❌ Tu pedido fue cancelado.",
         "Ya no se incluirá en las cantidades por preparar.",
@@ -483,27 +933,27 @@ async function handleConversationMessage({
     const normalized = buildTextOrder(result.session, message, config);
     await store.replaceOrder(normalized);
     conversationState.set(message.from, result.session);
-    logger.log(`Pedido conversacional actualizado: ${session.orderId}`);
-    await message.reply(updatedMessage(result.session, config));
+    logger.log(`Pedido conversacional actualizado: ${result.session.orderId}`);
+    await sendVerified(updatedMessage(result.session, config));
     return true;
   }
 
   if (result.completed) {
-    const normalized = buildTextOrder(session, message, config);
+    const normalized = buildTextOrder(result.session, message, config);
     const saved = await store.saveOrder(normalized);
     if (saved.inserted) {
-      logger.log(`Pedido conversacional guardado: ${session.orderId}`);
+      logger.log(`Pedido conversacional guardado: ${result.session.orderId}`);
     } else {
-      logger.log(`Pedido conversacional duplicado omitido: ${session.orderId}`);
+      logger.log(`Pedido conversacional duplicado omitido: ${result.session.orderId}`);
     }
     conversationState.set(message.from, result.session);
-    await message.reply(confirmedMessage(session, config));
+    await sendVerified(confirmedMessage(result.session, config));
     return true;
   }
 
   conversationState.set(message.from, result.session);
-  for (const reply of result.messages) {
-    await message.reply(reply);
+  if (result.messages?.length) {
+    await sendVerified(result.messages.join("\n\n"));
   }
   return true;
 }
@@ -513,22 +963,93 @@ async function handleCartConversationMessage({
   store,
   config,
   conversationState,
+  aiAssistant,
+  lastBotMessage = "",
   input,
   logger = console,
 }) {
   const session = conversationState.get(message.from);
   if (!session || session.source !== "CART") return false;
-
-  const result = advanceCartConversation(
+  const customerMessage = String(input ?? message.body ?? "");
+  const plan = await naturalTurnPlan({
+    aiAssistant,
+    customerMessage,
     session,
-    input ?? message.body,
     config,
-    new Date(),
-  );
+    lastBotMessage,
+    logger,
+  });
+  const plannedInputs = aiInputs(plan);
+
+  if (plan && !plannedInputs.length) {
+    const verifiedAnswer =
+      plan.kind === "ANSWER"
+        ? verifiedKnowledgeReply(plan, session, config)
+        : plan.reply;
+    const factualReply = planReply(
+      { ...plan, reply: verifiedAnswer },
+      lastBotMessage,
+    );
+    const reply =
+      plan.kind === "ANSWER"
+        ? await groundedReply({
+            aiAssistant,
+            customerMessage,
+            verifiedReply: factualReply,
+            session,
+            config,
+            logger,
+          })
+        : factualReply;
+    await message.reply(reply);
+    return true;
+  }
+
+  const execution = plannedInputs.length
+    ? runCartInputs({
+        session,
+        inputs: plannedInputs,
+        customerMessage,
+        config,
+      })
+    : {
+        result: advanceCartConversation(
+          session,
+          customerMessage,
+          config,
+          new Date(),
+        ),
+        applied: 1,
+      };
+  if (!execution.result || execution.applied === 0) {
+    conversationState.set(message.from, execution.session || session);
+    await message.reply(planReply(plan, lastBotMessage));
+    return true;
+  }
+  const result = execution.result;
+  const sendVerified = async (
+    verifiedReply,
+    replySession = result.session,
+    discloseAi = false,
+  ) => {
+    const reply = await groundedReply({
+      aiAssistant,
+      customerMessage,
+      verifiedReply,
+      session: replySession,
+      config,
+      logger,
+    });
+    if (reply) await message.reply(withAiDisclosure(reply, discloseAi));
+  };
 
   if (result.startTextOrder) {
     conversationState.set(message.from, result.session);
-    await message.reply(menuMessage(result.session.customerName, config));
+    await sendVerified(
+      menuMessage(result.session.customerName, config),
+      result.session,
+      Boolean(aiAssistant?.enabled?.(config)),
+    );
     return true;
   }
 
@@ -539,8 +1060,8 @@ async function handleCartConversationMessage({
       customerNotes: "Pedido cancelado por el cliente en WhatsApp",
     });
     conversationState.set(message.from, result.session);
-    logger.log(`Pedido de carrito cancelado: ${session.orderId}`);
-    await message.reply(
+    logger.log(`Pedido de carrito cancelado: ${result.session?.orderId || session.orderId}`);
+    await sendVerified(
       [
         "❌ Tu pedido fue cancelado.",
         "Ya no se incluirá en las cantidades por preparar.",
@@ -554,8 +1075,8 @@ async function handleCartConversationMessage({
   if (result.updated) {
     await store.replaceOrder(result.session.cartOrder);
     conversationState.set(message.from, result.session);
-    logger.log(`Pedido de carrito actualizado: ${session.orderId}`);
-    await message.reply(
+    logger.log(`Pedido de carrito actualizado: ${result.session.orderId}`);
+    await sendVerified(
       [
         "✅ Tu pedido fue actualizado.",
         "",
@@ -571,11 +1092,11 @@ async function handleCartConversationMessage({
     const saved = await store.saveOrder(result.session.cartOrder);
     conversationState.set(message.from, result.session);
     if (saved.inserted) {
-      logger.log(`Pedido de carrito guardado: ${session.orderId}`);
+      logger.log(`Pedido de carrito guardado: ${result.session.orderId}`);
     } else {
-      logger.log(`Pedido de carrito duplicado omitido: ${session.orderId}`);
+      logger.log(`Pedido de carrito duplicado omitido: ${result.session.orderId}`);
     }
-    await message.reply(cartConfirmedMessage(result.session));
+    await sendVerified(cartConfirmedMessage(result.session));
     return true;
   }
 
@@ -584,8 +1105,8 @@ async function handleCartConversationMessage({
   } else {
     conversationState.set(message.from, null);
   }
-  for (const reply of result.messages) {
-    await message.reply(reply);
+  if (result.messages?.length) {
+    await sendVerified(result.messages.join("\n\n"));
   }
   return true;
 }
@@ -595,6 +1116,7 @@ function createWhatsAppClient({
   configProvider = () => config,
   conversationState: suppliedConversationState,
   pauseState: suppliedPauseState,
+  aiAssistant,
   disableSystem = disableScheduledBot,
   shutdownSystem = requestGracefulShutdown,
   store,
@@ -760,7 +1282,12 @@ function createWhatsAppClient({
         logger.log(
           `Carrito pendiente de modalidad: ${normalized.summary.orderId}`,
         );
-        await message.reply(cartReceivedMessage(session, runtimeConfig));
+        await message.reply(
+          withAiDisclosure(
+            cartReceivedMessage(session, runtimeConfig),
+            Boolean(aiAssistant?.enabled?.(runtimeConfig)),
+          ),
+        );
         return;
       }
 
@@ -790,6 +1317,8 @@ function createWhatsAppClient({
             store,
             config: runtimeConfig,
             conversationState,
+            aiAssistant,
+            lastBotMessage: pauseState.lastMessage?.(message.from) || "",
             input: locationInput,
             logger,
           });
@@ -810,6 +1339,8 @@ function createWhatsAppClient({
           store,
           config: runtimeConfig,
           conversationState,
+          aiAssistant,
+          lastBotMessage: pauseState.lastMessage?.(message.from) || "",
           logger,
         });
         return;

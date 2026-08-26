@@ -173,6 +173,23 @@ test("el control global del bot se guarda y llega a la configuracion activa", ()
   assert.equal(new AdminConfigStore(file, baseConfig).getState().botEnabled, false);
 });
 
+test("la activacion de IA se guarda sin persistir la llave secreta", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lacenaduria-ai-config-"));
+  const file = path.join(directory, "admin.json");
+  const store = new AdminConfigStore(file, {
+    ...baseConfig,
+    aiEnabledByDefault: true,
+    aiRewriteResponses: true,
+    openaiApiKey: "secret-test-key",
+  });
+
+  assert.equal(store.runtimeConfig().aiEnabled, true);
+  store.updateAi({ enabled: false });
+  assert.equal(store.runtimeConfig().aiEnabled, false);
+  assert.equal(new AdminConfigStore(file, baseConfig).getState().ai.enabled, false);
+  assert.doesNotMatch(fs.readFileSync(file, "utf8"), /secret-test-key/);
+});
+
 test("un numero no puede estar permitido y bloqueado", () => {
   assert.throws(
     () =>

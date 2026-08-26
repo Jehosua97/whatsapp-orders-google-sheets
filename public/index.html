@@ -60,6 +60,10 @@
           <i data-lucide="shield"></i>
           <span>Control del bot</span>
         </button>
+        <button class="nav-item" data-view="ai">
+          <i data-lucide="bot"></i>
+          <span>Inteligencia</span>
+        </button>
         <button class="nav-item" data-view="promotions">
           <i data-lucide="badge-percent"></i>
           <span>Promociones</span>
@@ -313,6 +317,62 @@
           </div>
         </section>
 
+        <section class="view" id="aiView">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Conversación natural controlada</p>
+              <h1>Inteligencia artificial</h1>
+            </div>
+            <div class="view-actions">
+              <button class="button secondary" id="testAiButton">
+                <i data-lucide="activity"></i>
+                Probar conexión
+              </button>
+              <button class="button primary" id="saveAiButton">
+                <i data-lucide="save"></i>
+                Guardar y aplicar
+              </button>
+            </div>
+          </div>
+
+          <div class="automation-active-status" id="aiActiveStatus">
+            <span class="active-status-icon">
+              <i data-lucide="bot"></i>
+            </span>
+            <div>
+              <span>Estado de la integración</span>
+              <strong id="aiStatusTitle">Verificando</strong>
+              <p id="aiStatusDetail">Comprobando la configuración de OpenAI.</p>
+            </div>
+          </div>
+
+          <section class="settings-card">
+            <div>
+              <h2>Usar IA para entender y redactar</h2>
+              <p>La IA interpreta mensajes naturales y mejora la respuesta. El servidor conserva el control de productos, precios, fechas, delivery, mínimos y confirmación.</p>
+              <p><strong>Si OpenAI falla, el bot continúa automáticamente con el flujo verificado tradicional.</strong></p>
+            </div>
+            <label class="switch" title="Activar inteligencia artificial">
+              <input id="aiEnabled" type="checkbox" />
+              <span></span>
+            </label>
+          </section>
+
+          <section class="settings-card ai-model-card">
+            <div>
+              <h2>Modelo configurado</h2>
+              <p id="aiModel">gpt-5.4-mini</p>
+              <p>La llave se guarda únicamente en <strong>.env</strong>; nunca se muestra en este panel ni se sube a GitHub.</p>
+            </div>
+            <span class="pill pickup" id="aiConfiguredBadge">Configuración pendiente</span>
+          </section>
+
+          <div class="notice-bar">
+            <i data-lucide="shield-check"></i>
+            <span>La IA no escribe directamente en Google Sheets. Primero propone una interpretación; después el motor del negocio valida cada paso y solo guarda el pedido tras la confirmación explícita del cliente.</span>
+          </div>
+        </section>
+
         <section class="view" id="promotionsView">
           <div class="view-header">
             <div>
@@ -378,6 +438,14 @@
             <section class="settings-card help-card">
               <i data-lucide="users-round"></i>
               <div><h2>6. Nunca responde en grupos</h2><p>El bot acepta únicamente conversaciones individuales. Los grupos, estados, listas de difusión y canales se ignoran.</p></div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="bot"></i>
+              <div><h2>7. Respuestas con IA</h2><p>En <strong>Inteligencia</strong> puedes activar o desactivar la comprensión natural. Cada conversación nueva muestra el aviso “Mensajes generados con IA”. La IA entiende frases como “quiero una docena de vainilla”, pero el catálogo, los precios, la disponibilidad, el mínimo y el total siempre los valida el sistema antes de responder. Si solicitan un producto fuera del catálogo, no se sustituye por otro: se muestran los productos vigentes y se ofrece revisión manual como pedido especial.</p></div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="shield-alert"></i>
+              <div><h2>8. Protección contra fallas</h2><p>Si OpenAI tarda demasiado, rechaza la llave o no está disponible, el pedido no se pierde: el bot vuelve al menú y las preguntas verificadas. Nunca guarda un pedido sin mostrar el resumen final y recibir una confirmación explícita.</p></div>
             </section>
           </div>
         </section>

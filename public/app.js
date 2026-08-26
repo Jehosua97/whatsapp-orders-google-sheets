@@ -481,6 +481,7 @@ function renderAll() {
   document.querySelector("#freeBramptonDelivery").checked =
     state.dashboard.promotions?.freeBramptonDelivery !== false;
   renderBotPower();
+  renderAi();
 }
 
 function renderBotPower() {
@@ -497,6 +498,49 @@ function renderBotPower() {
   icons();
 }
 
+function renderAi() {
+  const ai = state.dashboard.ai || {
+    enabled: false,
+    configured: false,
+    operational: false,
+    model: "gpt-5.4-mini",
+  };
+  document.querySelector("#aiEnabled").checked = ai.enabled === true;
+  document.querySelector("#aiModel").textContent = ai.model || "gpt-5.4-mini";
+
+  const status = document.querySelector("#aiActiveStatus");
+  const title = document.querySelector("#aiStatusTitle");
+  const detail = document.querySelector("#aiStatusDetail");
+  const badge = document.querySelector("#aiConfiguredBadge");
+  status.classList.toggle("production", ai.operational === true);
+  status.classList.toggle(
+    "ai-unavailable",
+    ai.enabled === true && ai.configured !== true,
+  );
+
+  if (ai.operational) {
+    title.textContent = "IA activa";
+    detail.textContent = ai.lastError
+      ? `El flujo seguro sigue disponible. Último aviso: ${ai.lastError}`
+      : "Entiende mensajes naturales y redacta sobre respuestas verificadas.";
+  } else if (!ai.enabled) {
+    title.textContent = "IA desactivada";
+    detail.textContent = "El bot utiliza únicamente el flujo tradicional verificado.";
+  } else if (!ai.configured) {
+    title.textContent = "Falta configurar la llave";
+    detail.textContent = "Agrega OPENAI_API_KEY al archivo .env y reinicia el servicio.";
+  } else {
+    title.textContent = "IA temporalmente no disponible";
+    detail.textContent = ai.lastError ||
+      "La conexión no está disponible. El bot continúa con el flujo seguro.";
+  }
+
+  badge.textContent = ai.configured ? "Llave configurada" : "Falta OPENAI_API_KEY";
+  badge.classList.toggle("pickup", ai.configured === true);
+  badge.classList.toggle("warning", ai.configured !== true);
+  icons();
+}
+
 async function loadDashboard(showMessage = false) {
   const button = document.querySelector("#refreshButton");
   setLoading(button, true);
@@ -505,6 +549,16 @@ async function loadDashboard(showMessage = false) {
     state.dashboard.promotions = {
       freeBramptonDelivery:
         state.dashboard.promotions?.freeBramptonDelivery !== false,
+    };
+    state.dashboard.ai = {
+      enabled: state.dashboard.ai?.enabled === true,
+      configured: state.dashboard.ai?.configured === true,
+      operational: state.dashboard.ai?.operational === true,
+      model: state.dashboard.ai?.model || "gpt-5.4-mini",
+      lastError: state.dashboard.ai?.lastError || "",
+      lastSuccessAt: state.dashboard.ai?.lastSuccessAt || "",
+      lastFailureAt: state.dashboard.ai?.lastFailureAt || "",
+      suspendedUntil: state.dashboard.ai?.suspendedUntil || "",
     };
     state.savedAutomation = clone(state.dashboard.automation);
     renderAll();
@@ -858,6 +912,47 @@ document.querySelector("#botPowerButton").addEventListener("click", async (event
       : "El bot está pausado para todos los chats.");
   } catch (error) {
     showToast(error.message, true);
+  } finally {
+    setLoading(button, false);
+  }
+});
+
+document.querySelector("#saveAiButton").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const enabled = document.querySelector("#aiEnabled").checked;
+  setLoading(button, true);
+  try {
+    const result = await api("/api/ai", {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
+    state.dashboard.ai = result.ai;
+    renderAi();
+    showToast(result.ai.operational
+      ? "Inteligencia artificial activada."
+      : "Inteligencia artificial desactivada; continúa el flujo seguro.");
+  } catch (error) {
+    showToast(error.message, true);
+    await loadDashboard();
+  } finally {
+    setLoading(button, false);
+  }
+});
+
+document.querySelector("#testAiButton").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  setLoading(button, true);
+  try {
+    const result = await api("/api/ai/test", {
+      method: "POST",
+      body: "{}",
+    });
+    state.dashboard.ai = result.ai;
+    renderAi();
+    showToast("Conexión con OpenAI verificada correctamente.");
+  } catch (error) {
+    showToast(error.message, true);
+    await loadDashboard();
   } finally {
     setLoading(button, false);
   }

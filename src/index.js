@@ -3,6 +3,7 @@
 const { readConfig } = require("./config");
 const { AdminConfigStore } = require("./admin-config");
 const { createAdminServer } = require("./admin-server");
+const { OpenAiBusinessAssistant } = require("./ai-assistant");
 const { ConversationStateStore } = require("./conversation-flow");
 const { GoogleSheetsOrderStore } = require("./google-sheets");
 const { createWhatsAppClient } = require("./whatsapp");
@@ -21,6 +22,11 @@ async function main() {
         config.conversationSessionTimeoutHours * 60 * 60 * 1000,
     },
   );
+  const aiAssistant = new OpenAiBusinessAssistant({
+    apiKey: config.openaiApiKey,
+    model: config.openaiModel,
+    timeoutMs: config.openaiTimeoutMs,
+  });
   const recoveredSessions = conversationState.lastRecoveryReport;
   if (
     recoveredSessions.resetCart ||
@@ -41,12 +47,14 @@ async function main() {
     config,
     configProvider: () => configStore.runtimeConfig(),
     conversationState,
+    aiAssistant,
     store,
   });
   const admin = createAdminServer({
     config,
     configStore,
     conversationState,
+    aiAssistant,
     store,
     whatsapp,
   });

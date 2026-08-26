@@ -4,7 +4,7 @@ const path = require("node:path");
 const dotenv = require("dotenv");
 const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
 
-dotenv.config();
+dotenv.config({ quiet: true, override: true });
 
 function required(name) {
   const value = process.env[name]?.trim();
@@ -18,6 +18,14 @@ function readConfig() {
   const number = (name, fallback) => {
     const value = Number(process.env[name]);
     return Number.isFinite(value) ? value : fallback;
+  };
+
+  const boolean = (name, fallback) => {
+    const value = process.env[name]?.trim().toLowerCase();
+    if (!value) return fallback;
+    if (["true", "1", "yes", "si"].includes(value)) return true;
+    if (["false", "0", "no"].includes(value)) return false;
+    return fallback;
   };
 
   return {
@@ -89,6 +97,11 @@ function readConfig() {
     adminHost: process.env.ADMIN_HOST?.trim() || "127.0.0.1",
     adminPort: number("ADMIN_PORT", 3090),
     adminPassword: process.env.ADMIN_PASSWORD || "",
+    openaiApiKey: process.env.OPENAI_API_KEY?.trim() || "",
+    openaiModel: process.env.OPENAI_MODEL?.trim() || "gpt-5.4-mini",
+    openaiTimeoutMs: number("OPENAI_TIMEOUT_MS", 20000),
+    aiEnabledByDefault: boolean("AI_ASSISTANT_ENABLED", true),
+    aiRewriteResponses: boolean("AI_REWRITE_RESPONSES", true),
     minimumOrderPieces: number("MINIMUM_ORDER_PIECES", 5),
     menuPrices: {
       chocolate: number("CHOCOLATE_CONCHA_PRICE", 3.5),

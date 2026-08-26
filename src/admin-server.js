@@ -142,6 +142,7 @@ function createAdminServer({
   config,
   configStore,
   conversationState,
+  aiAssistant,
   store,
   whatsapp,
   logger = console,
@@ -152,9 +153,17 @@ function createAdminServer({
   app.disable("x-powered-by");
   app.use(express.json({ limit: "256kb" }));
   app.get("/health", (_request, response) => {
+    const runtimeConfig = configStore.runtimeConfig();
     response.json({
       status: "ok",
       whatsapp: whatsapp.lacenaduriaStatus || "CONNECTING",
+      ai:
+        aiAssistant?.status(runtimeConfig) || {
+          enabled: runtimeConfig.aiEnabled !== false,
+          configured: false,
+          operational: false,
+          model: config.openaiModel || "gpt-5.4-mini",
+        },
       uptimeSeconds: Math.floor(process.uptime()),
       conversations: conversationState.healthSummary(),
     });
@@ -196,6 +205,14 @@ function createAdminServer({
         closures,
         notifications: state.notifications.slice(-50).reverse(),
         automation: state.automation,
+        ai:
+          aiAssistant?.status(runtimeConfig) || {
+            enabled: state.ai?.enabled !== false,
+            configured: Boolean(config.openaiApiKey),
+            operational:
+              state.ai?.enabled !== false && Boolean(config.openaiApiKey),
+            model: config.openaiModel || "gpt-5.4-mini",
+          },
         botEnabled: state.botEnabled,
         promotions: state.promotions,
         upcomingDates: upcomingDates(state, orders),
@@ -239,6 +256,46 @@ function createAdminServer({
     try {
       const state = configStore.updateBotEnabled(request.body.enabled);
       response.json({ enabled: state.botEnabled });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/ai", (request, response, next) => {
+    try {
+      const wantsEnabled = request.body?.enabled === true;
+      if (wantsEnabled && !config.openaiApiKey) {
+        throw new Error(
+          "Falta OPENAI_API_KEY en el archivo .env. Agrégala y reinicia el servicio antes de activar la IA.",
+        );
+      }
+      const state = configStore.updateAi({ enabled: wantsEnabled });
+      const runtimeConfig = configStore.runtimeConfig();
+      response.json({
+        ai:
+          aiAssistant?.status(runtimeConfig) || {
+            enabled: state.ai.enabled,
+            configured: Boolean(config.openaiApiKey),
+            operational: state.ai.enabled && Boolean(config.openaiApiKey),
+            model: config.openaiModel || "gpt-5.4-mini",
+          },
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/ai/test", async (_request, response, next) => {
+    try {
+      if (!aiAssistant || !config.openaiApiKey) {
+        throw new Error(
+          "Falta OPENAI_API_KEY en el archivo .env. Agrégala y reinicia el servicio.",
+        );
+      }
+      const status = await aiAssistant.testConnection(
+        configStore.runtimeConfig(),
+      );
+      response.json({ ai: status });
     } catch (error) {
       next(error);
     }

@@ -72,12 +72,21 @@ function normalizeAutomation(automation = {}) {
   return { mode, allowedPhones, blockedPhones };
 }
 
+function normalizeAi(ai = {}, baseConfig = {}) {
+  return {
+    enabled:
+      ai.enabled === undefined
+        ? baseConfig.aiEnabledByDefault !== false
+        : ai.enabled === true,
+  };
+}
+
 function defaultState(baseConfig) {
   const configuredAllowedPhones = [
     ...(baseConfig.automationAllowedPhones || []),
   ];
   return {
-    version: 2,
+    version: 3,
     botEnabled: true,
     catalog: [
       {
@@ -180,6 +189,7 @@ function defaultState(baseConfig) {
       allowedPhones: configuredAllowedPhones,
       blockedPhones: [],
     },
+    ai: normalizeAi({}, baseConfig),
     promotions: { ...DEFAULT_PROMOTIONS },
     updatedAt: new Date().toISOString(),
   };
@@ -403,7 +413,7 @@ class AdminConfigStore {
       return {
         ...defaults,
         ...parsed,
-        version: 2,
+        version: 3,
         botEnabled: parsed.botEnabled !== false,
         catalog: normalizeCatalog(
           repairCatalogEncoding(parsed.catalog, defaults.catalog),
@@ -418,6 +428,7 @@ class AdminConfigStore {
         automation: normalizeAutomation(
           parsed.automation || defaults.automation,
         ),
+        ai: normalizeAi(parsed.ai || defaults.ai, this.baseConfig),
         promotions: {
           ...DEFAULT_PROMOTIONS,
           ...(parsed.promotions || {}),
@@ -461,6 +472,8 @@ class AdminConfigStore {
       ),
       automationMode: state.automation.mode,
       botEnabled: state.botEnabled,
+      aiEnabled: state.ai.enabled,
+      aiRewriteResponses: this.baseConfig.aiRewriteResponses !== false,
       automationAllowedChatIds: new Set(),
       automationAllowedPhones: new Set(state.automation.allowedPhones),
       automationBlockedPhones: new Set(state.automation.blockedPhones),
@@ -499,6 +512,13 @@ class AdminConfigStore {
     return this.persist({
       ...this.state,
       botEnabled: enabled === true,
+    });
+  }
+
+  updateAi(ai) {
+    return this.persist({
+      ...this.state,
+      ai: normalizeAi(ai, this.baseConfig),
     });
   }
 
@@ -573,6 +593,7 @@ module.exports = {
   defaultState,
   isServiceClosed,
   nextAvailableSchedule,
+  normalizeAi,
   normalizeCatalog,
   normalizeAutomation,
   normalizeSchedules,
