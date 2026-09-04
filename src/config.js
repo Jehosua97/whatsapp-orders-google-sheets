@@ -101,6 +101,12 @@ function readConfig() {
     openaiModel: process.env.OPENAI_MODEL?.trim() || "gpt-5.4-mini",
     openaiTimeoutMs: number("OPENAI_TIMEOUT_MS", 20000),
     aiEnabledByDefault: boolean("AI_ASSISTANT_ENABLED", true),
+    aiAgentMode: boolean("AI_AGENT_MODE", true),
+    agentMaxSteps: Math.max(1, Math.min(12, number("AGENT_MAX_STEPS", 6))),
+    agentTranscriptTurns: Math.max(
+      4,
+      Math.min(40, number("AGENT_TRANSCRIPT_TURNS", 12)),
+    ),
     aiRewriteResponses: boolean("AI_REWRITE_RESPONSES", true),
     minimumOrderPieces: number("MINIMUM_ORDER_PIECES", 5),
     menuPrices: {

@@ -597,6 +597,91 @@ h2 {
   box-shadow: 0 0 0 3px rgba(34, 116, 71, 0.14);
 }
 
+.ready-add-card {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.2fr) 150px minmax(210px, 1fr) minmax(180px, auto);
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.ready-add-heading {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.ready-add-heading h2 { margin: 0; }
+.ready-add-heading > svg { color: var(--primary); }
+
+.ready-services {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px 10px;
+  border: 1px solid #cfd6d1;
+  border-radius: 5px;
+}
+
+.ready-services legend {
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ready-note-field { grid-column: 1 / -2; }
+
+.ready-inventory-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ready-inventory-row {
+  display: grid;
+  grid-template-columns: minmax(230px, 1.25fr) 150px minmax(210px, 1fr) minmax(160px, auto);
+  align-items: end;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.ready-product-label {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ready-product-label > div {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+}
+
+.ready-product-emoji { font-size: 28px; }
+.compact-field { gap: 5px; }
+
+.ready-row-services {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ready-row-note { grid-column: 1 / -2; }
+.ready-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+
 input,
 select {
   width: 100%;
@@ -1305,6 +1390,16 @@ fieldset {
   .schedule-row > .icon-button {
     justify-self: end;
   }
+
+  .ready-add-card,
+  .ready-inventory-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ready-note-field,
+  .ready-row-note {
+    grid-column: 1;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1345,7 +1440,7 @@ fieldset {
     z-index: 30;
     height: 64px;
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(8, 1fr);
     padding: 5px 8px;
     border-top: 1px solid var(--line);
     border-right: 0;
@@ -1393,7 +1488,8 @@ fieldset {
   .catalog-row,
   .schedule-row,
   .closure-row,
-  .affected-row {
+  .affected-row,
+  .ready-inventory-row {
     grid-template-columns: 1fr;
     gap: 10px;
     margin-bottom: 10px;
@@ -1406,6 +1502,18 @@ fieldset {
   .catalog-row {
     min-height: 0;
   }
+
+  .ready-add-card {
+    grid-template-columns: 1fr;
+  }
+
+  .ready-add-heading,
+  .ready-note-field,
+  .ready-row-note {
+    grid-column: 1;
+  }
+
+  .ready-row-actions { justify-content: flex-start; }
 
   .catalog-row > .icon-button,
   .schedule-row > .icon-button {

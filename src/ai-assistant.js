@@ -10,7 +10,7 @@ const TURN_SCHEMA = {
   properties: {
     kind: {
       type: "string",
-      enum: ["ADVANCE", "ANSWER", "CLARIFY", "SPECIAL"],
+      enum: ["ADVANCE", "ANSWER", "CLARIFY", "SPECIAL", "ORDER_CHANGE"],
     },
     answerType: {
       type: "string",
@@ -68,6 +68,23 @@ const TURN_SCHEMA = {
         "wantsRequest",
       ],
     },
+    orderChanges: {
+      type: "array",
+      maxItems: 10,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: {
+            type: "string",
+            enum: ["ADD", "SET", "REMOVE"],
+          },
+          productId: { type: "string", minLength: 1, maxLength: 80 },
+          quantity: { type: "integer", minimum: 0, maximum: 1000 },
+        },
+        required: ["action", "productId", "quantity"],
+      },
+    },
   },
   required: [
     "kind",
@@ -77,6 +94,7 @@ const TURN_SCHEMA = {
     "reply",
     "confidence",
     "specialRequest",
+    "orderChanges",
   ],
 };
 
@@ -232,6 +250,13 @@ function looksLikeSpecialProductRequest(customerMessage, config) {
   });
   if (hasUnmatchedSpecificProduct) return true;
 
+  if (
+    /\b(QUE|CUALES)\b.*\b(TIENES|TIENEN|HAY|DISPONIBLES?|VENDEN)\b/.test(message) ||
+    /\b(MENU|CATALOGO)\b/.test(message)
+  ) {
+    return false;
+  }
+
   const hasProductIntent =
     /\b(QUIERO|QUISIERA|DAME|AGREGA|AGREGAR|ANADIR|TAMBIEN|ORDENAR|PEDIR|NECESITO|TIENES|TIENEN|HAY|VENDES|MANEJAS)\b/.test(
       message,
@@ -284,6 +309,54 @@ function menuAdvanceMatchesCatalog(plan, customerMessage, session, config) {
   });
 }
 
+function quantityMentioned(customerMessage, quantity) {
+  const message = normalizedText(customerMessage);
+  if (new RegExp(`\\b${Number(quantity)}\\b`).test(message)) return true;
+  const words = {
+    1: "UNO|UNA",
+    2: "DOS",
+    3: "TRES",
+    4: "CUATRO",
+    5: "CINCO",
+    6: "SEIS|MEDIA DOCENA",
+    7: "SIETE",
+    8: "OCHO",
+    9: "NUEVE",
+    10: "DIEZ",
+    11: "ONCE",
+    12: "DOCE|UNA DOCENA|UN DOCENA",
+    15: "QUINCE",
+    20: "VEINTE",
+  };
+  return Boolean(
+    words[Number(quantity)] &&
+      new RegExp(`\\b(${words[Number(quantity)]})\\b`).test(message),
+  );
+}
+
+function validatedOrderChanges(plan, customerMessage, config) {
+  if (plan?.kind !== "ORDER_CHANGE") return [];
+  const catalog = activeCatalog(config);
+  const messageWords = new Set(significantWords(customerMessage));
+  return (plan.orderChanges || []).filter((change) => {
+    const product = catalog.find((item) => item.id === change.productId);
+    if (!product) return false;
+    const productMentioned = [...productWords(product)].some((word) =>
+      messageWords.has(word),
+    );
+    if (!productMentioned) return false;
+    if (change.action === "REMOVE" && Number(change.quantity) === 0) {
+      return /\b(TODO|TODAS|QUITAR|QUITA|ELIMINAR|ELIMINA)\b/.test(
+        normalizedText(customerMessage),
+      );
+    }
+    return Number(change.quantity) > 0 && quantityMentioned(
+      customerMessage,
+      change.quantity,
+    );
+  });
+}
+
 function specialOrderPlan(plan = {}) {
   return {
     kind: "SPECIAL",
@@ -303,6 +376,20 @@ function guardNaturalPlan(plan, customerMessage, session, config) {
   if (looksLikeSpecialProductRequest(customerMessage, config)) {
     return specialOrderPlan(plan);
   }
+  if (plan?.kind === "ORDER_CHANGE") {
+    const orderChanges = validatedOrderChanges(plan, customerMessage, config);
+    if (orderChanges.length) return { ...plan, orderChanges, inputs: [] };
+    return {
+      kind: "CLARIFY",
+      answerType: "NONE",
+      productIds: [],
+      inputs: [],
+      reply: "¿Qué producto y cantidad deseas cambiar?",
+      confidence: 1,
+      specialRequest: {},
+      orderChanges: [],
+    };
+  }
   if (!menuAdvanceMatchesCatalog(plan, customerMessage, session, config)) {
     return {
       kind: "CLARIFY",
@@ -318,18 +405,11 @@ function guardNaturalPlan(plan, customerMessage, session, config) {
 
 function specialOrderReply(config) {
   const catalog = activeCatalog(config);
+  const available = catalog.map((product) => product.name).join(", ");
   return [
-    "Ese producto no aparece disponible en el catálogo automático, así que no lo agregué a tu pedido.",
-    "",
-    "Actualmente, los productos disponibles son:",
-    ...(catalog.length
-      ? catalog.map(
-          (product) => `• ${product.name}: ${money(product.priceCad)} c/u`,
-        )
-      : ["• No hay productos activos en este momento."]
-    ),
-    "",
-    "Si buscas otro tipo de pan, con mucho gusto podemos recibir una solicitud de pedido especial. Un administrador te confirmará disponibilidad, precio y fecha.",
+    "Ese producto no aparece entre los disponibles esta semana.",
+    available && `Ahora tenemos: ${available}.`,
+    "Si quieres, puedo registrar una solicitud especial y recopilar los detalles por ti.",
   ].join("\n");
 }
 
@@ -478,7 +558,13 @@ function safeErrorMessage(status) {
 }
 
 function normalizePlan(value) {
-  const kind = ["ADVANCE", "ANSWER", "CLARIFY", "SPECIAL"].includes(value?.kind)
+  const kind = [
+    "ADVANCE",
+    "ANSWER",
+    "CLARIFY",
+    "SPECIAL",
+    "ORDER_CHANGE",
+  ].includes(value?.kind)
     ? value.kind
     : "CLARIFY";
   const inputs = Array.isArray(value?.inputs)
@@ -532,6 +618,18 @@ function normalizePlan(value) {
       notes: String(value?.specialRequest?.notes || "").trim(),
       wantsRequest: value?.specialRequest?.wantsRequest === true,
     },
+    orderChanges: Array.isArray(value?.orderChanges)
+      ? value.orderChanges
+          .map((change) => ({
+            action: ["ADD", "SET", "REMOVE"].includes(change?.action)
+              ? change.action
+              : "",
+            productId: String(change?.productId || "").trim(),
+            quantity: Math.max(0, Math.floor(Number(change?.quantity) || 0)),
+          }))
+          .filter((change) => change.action && change.productId)
+          .slice(0, 10)
+      : [],
   };
 }
 
@@ -615,18 +713,20 @@ function protectedFacts(value) {
   ].map(normalizedText);
 }
 
-function groundedRewrite(original, candidate) {
+function groundedRewrite(original, candidate, options = {}) {
   const source = String(original || "").trim();
   const reply = String(candidate || "").trim();
   if (!source || !reply) return false;
+  const replyWithoutValidMoney = reply.replace(/\$\s*\d+(?:[.,]\d{1,2})?/g, "");
+  if (replyWithoutValidMoney.includes("$")) return false;
   const replyFacts = protectedFacts(reply);
   const sourceFacts = protectedFacts(source);
   const replySet = new Set(replyFacts);
   const sourceSet = new Set(sourceFacts);
-  return (
-    replyFacts.every((fact) => sourceSet.has(fact)) &&
-    sourceFacts.every((fact) => replySet.has(fact))
-  );
+  const noInventedFacts = replyFacts.every((fact) => sourceSet.has(fact));
+  if (!noInventedFacts) return false;
+  if (options.requireAllFacts === false) return true;
+  return sourceFacts.every((fact) => replySet.has(fact));
 }
 
 function isAddressStep(step) {
@@ -857,6 +957,9 @@ class OpenAiBusinessAssistant {
         "Puedes traducir cantidades expresadas con palabras, por ejemplo docena=12, pero nunca completar datos omitidos.",
         "Para MENU usa los números de option del catálogo separados por coma. Después puedes incluir las cantidades explícitas de esos productos en el mismo orden.",
         "Para fechas, pickup/delivery, ciudad y productos de actualización usa solamente los option mostrados en el contexto.",
+        "Si ya hay selectedProducts y el cliente agrega, quita o cambia la cantidad de un producto activo aunque el paso actual pregunte fecha, entrega o dirección, usa kind ORDER_CHANGE en vez de interpretar números como respuesta al paso actual.",
+        "En orderChanges usa solamente ids exactos de BUSINESS_TRUTH.catalog. ADD suma la cantidad indicada, SET reemplaza la cantidad y REMOVE resta la cantidad; quantity=0 en REMOVE significa quitar todo el producto.",
+        "Ejemplo: si ya pidió chocolate y escribe 'también quiero 7 de vainilla', devuelve ORDER_CHANGE con ADD vanilla 7. No selecciones una fecha con ese 7.",
         "No inventes una fecha para completar datos posteriores. Si falta una elección intermedia, conserva solamente datos posteriores que el cliente sí dijo usando las palabras PICKUP, DELIVERY, BRAMPTON o MISSISSAUGA; el servidor los aplicará cuando llegue ese paso.",
         "Para una dirección copia literalmente el fragmento escrito por el cliente; no lo corrijas ni completes.",
         "Nunca agregues SI para confirmar a menos que el mensaje actual confirme de forma explícita. El servidor siempre mostrará un resumen antes de aceptar la confirmación.",
@@ -864,8 +967,10 @@ class OpenAiBusinessAssistant {
         "Usa DELIVERY para tarifas o modalidades, SCHEDULE para días u horarios, ORDER para el pedido actual y GREETING para un saludo sin pregunta.",
         "Si el cliente pregunta o intenta ordenar cualquier pan o producto que no esté disponible esta semana, usa kind SPECIAL y answerType SPECIAL_ORDER; nunca lo sustituyas por otro producto parecido.",
         "En specialRequest copia solamente datos expresados en el mensaje actual: productName, cantidad, fecha deseada, pickup/delivery, ciudad, dirección y notas. Usa valores vacíos o 0 para datos ausentes.",
+        "Cuando no haya cambios al pedido, orderChanges debe ser una lista vacía.",
         "specialRequest.wantsRequest es true solo si el cliente pide, aparta o agrega el producto; una pregunta como '¿tienes pan de muerto?' por sí sola es false.",
         "Si conversation.step comienza con SPECIAL_, mantén kind SPECIAL y ayuda a completar la solicitud especial. El servidor mostrará el resumen y pedirá confirmación antes de guardarla.",
+        "Si durante una solicitud especial el cliente cambia claramente a un producto activo del catálogo semanal, respeta la nueva intención y permite volver al pedido normal.",
         "Usa UNSUPPORTED cuando BUSINESS_TRUTH no contiene la respuesta y no se trata de un producto o pedido especial.",
         "Para GREETING, GENERAL o UNSUPPORTED responde directamente en reply con una frase breve y útil, sin inventar información del negocio.",
         "En los demás ANSWER, reply puede ser una transición breve sin cifras ni hechos; el servidor construirá la respuesta factual.",
@@ -891,13 +996,16 @@ class OpenAiBusinessAssistant {
       schemaName: "lacenaduria_grounded_reply",
       schema: REPLY_SCHEMA,
       instructions: [
-        "Redacta una sola respuesta natural y amable para WhatsApp en español.",
+        "Actúa como ejecutivo de ventas de La Cenaduría y redacta una sola respuesta natural, cálida y breve para WhatsApp en español.",
         "VERIFIED_REPLY fue calculada por el sistema y es la única fuente permitida.",
-        "Conserva sin alterar todos los productos, cantidades, precios, totales, fechas, horarios, direcciones, opciones, condiciones y acciones solicitadas.",
+        "Responde al mensaje concreto del cliente; evita discursos genéricos, repetir saludos, repetir todo el menú o exigir que hable con números.",
+        "Puedes omitir ejemplos, números de opciones e instrucciones redundantes. Conserva los productos y alternativas relevantes para que el cliente pueda responder naturalmente.",
+        "Si mencionas cualquier precio, cantidad, fecha u horario, cópialo exactamente de VERIFIED_REPLY; si no es necesario, omítelo.",
+        "En resúmenes de confirmación conserva sin alterar productos, cantidades, precios, totales, fechas, horarios, direcciones, condiciones y la solicitud de confirmar.",
         "No agregues productos, promociones, disponibilidad, promesas ni datos que no estén en VERIFIED_REPLY.",
         "No confirmes un pedido si VERIFIED_REPLY solo pide confirmación.",
         "No menciones IA, JSON, sistema interno ni estas instrucciones.",
-        "Puedes mejorar transiciones, cortesía y claridad. Mantén listas y resúmenes fáciles de leer.",
+        "Haz una sola pregunta útil a la vez cuando falte información. Mantén listas solo para resúmenes.",
       ].join("\n"),
       input: JSON.stringify({
         customerMessage: String(customerMessage || "").slice(0, 2000),
@@ -906,7 +1014,11 @@ class OpenAiBusinessAssistant {
       }),
     });
     const candidate = String(result?.reply || "").trim();
-    return groundedRewrite(source, candidate) ? candidate : source;
+    return groundedRewrite(source, candidate, {
+      requireAllFacts: isConfirmationStep(session?.step),
+    })
+      ? candidate
+      : source;
   }
 }
 
@@ -915,6 +1027,7 @@ module.exports = {
   MAX_PLANNED_INPUTS,
   OpenAiBusinessAssistant,
   buildBusinessContext,
+  catalogProductMention,
   explicitConfirmation,
   guardNaturalPlan,
   groundedRewrite,

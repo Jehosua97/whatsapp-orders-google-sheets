@@ -20,6 +20,9 @@ const state = {
 const elements = {
   catalogRows: document.querySelector("#catalogRows"),
   catalogSummary: document.querySelector("#catalogSummary"),
+  readyInventoryRows: document.querySelector("#readyInventoryRows"),
+  readySummary: document.querySelector("#readySummary"),
+  readyInventoryForm: document.querySelector("#readyInventoryForm"),
   scheduleRows: document.querySelector("#scheduleRows"),
   upcomingDates: document.querySelector("#upcomingDates"),
   closureRows: document.querySelector("#closureRows"),
@@ -154,6 +157,136 @@ function catalogFromForm() {
       };
     },
   );
+}
+
+function localDateTimeValue(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function defaultReadyExpiry() {
+  return localDateTimeValue(Date.now() + 8 * 60 * 60 * 1000);
+}
+
+function readyBatchStatus(batch) {
+  const now = Date.now();
+  if (Number(batch.quantityAvailable || 0) <= 0) {
+    return { label: "Agotado", className: "unavailable" };
+  }
+  if (Date.parse(batch.expiresAt) <= now) {
+    return { label: "Vencido", className: "warning" };
+  }
+  if (Date.parse(batch.readyAt) > now) {
+    return { label: "Pendiente", className: "warning" };
+  }
+  return { label: "Disponible ahora", className: "pickup" };
+}
+
+function renderReadyInventory() {
+  const catalog = state.dashboard.catalog || [];
+  const batches = state.dashboard.readyInventory || [];
+  const productSelect = document.querySelector("#readyProduct");
+  const selectedProduct = productSelect.value;
+  productSelect.innerHTML = catalog
+    .map(
+      (product) =>
+        `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)}${product.active ? "" : " (fuera del catálogo semanal)"}</option>`,
+    )
+    .join("");
+  if (catalog.some((product) => product.id === selectedProduct)) {
+    productSelect.value = selectedProduct;
+  }
+  const expiryInput = document.querySelector("#readyExpiresAt");
+  if (!expiryInput.value) expiryInput.value = defaultReadyExpiry();
+
+  const active = batches.filter(
+    (batch) =>
+      Number(batch.quantityAvailable || 0) > 0 &&
+      Date.parse(batch.readyAt) <= Date.now() &&
+      Date.parse(batch.expiresAt) > Date.now(),
+  );
+  const activePieces = active.reduce(
+    (total, batch) => total + Number(batch.quantityAvailable || 0),
+    0,
+  );
+  const expired = batches.filter(
+    (batch) => Date.parse(batch.expiresAt) <= Date.now(),
+  ).length;
+  elements.readySummary.innerHTML = [
+    ["Piezas listas", activePieces],
+    ["Lotes activos", active.length],
+    ["Agotados o vencidos", batches.length - active.length],
+  ]
+    .map(
+      ([label, value]) =>
+        `<div class="summary-item"><span>${label}</span><strong>${value}</strong></div>`,
+    )
+    .join("");
+  document.querySelector("#readyNavCount").textContent = activePieces;
+
+  const productById = new Map(catalog.map((product) => [product.id, product]));
+  elements.readyInventoryRows.innerHTML = batches.length
+    ? [...batches]
+        .sort(
+          (left, right) =>
+            Date.parse(left.expiresAt) - Date.parse(right.expiresAt),
+        )
+        .map((batch) => {
+          const product = productById.get(batch.productId) || {};
+          const status = readyBatchStatus(batch);
+          return `
+            <article class="ready-inventory-row" data-batch-id="${escapeHtml(batch.id)}">
+              <div class="ready-product-label">
+                <span class="ready-product-emoji">${escapeHtml(product.emoji || "🥖")}</span>
+                <div>
+                  <strong>${escapeHtml(product.name || batch.productId)}</strong>
+                  <span class="pill ${status.className}">${status.label}</span>
+                </div>
+              </div>
+              <label class="field compact-field">
+                <span>Piezas disponibles</span>
+                <input data-ready-field="quantityAvailable" type="number" min="0" step="1" value="${Number(batch.quantityAvailable || 0)}" />
+              </label>
+              <label class="field compact-field">
+                <span>Vender hasta</span>
+                <input data-ready-field="expiresAt" type="datetime-local" value="${localDateTimeValue(batch.expiresAt)}" />
+              </label>
+              <div class="ready-row-services">
+                <label class="check-line"><input data-ready-field="pickupEnabled" type="checkbox" ${batch.pickupEnabled !== false ? "checked" : ""} /><span>Pickup</span></label>
+                <label class="check-line"><input data-ready-field="deliveryEnabled" type="checkbox" ${batch.deliveryEnabled !== false ? "checked" : ""} /><span>Delivery</span></label>
+              </div>
+              <label class="field compact-field ready-row-note">
+                <span>Nota interna</span>
+                <input data-ready-field="note" maxlength="160" value="${escapeHtml(batch.note || "")}" placeholder="Sin nota" />
+              </label>
+              <div class="ready-row-actions">
+                <button class="button secondary small save-ready-batch" type="button"><i data-lucide="save"></i>Guardar</button>
+                <button class="icon-button danger-icon remove-ready-batch" type="button" title="Eliminar lote"><i data-lucide="trash-2"></i></button>
+              </div>
+            </article>`;
+        })
+        .join("")
+    : '<div class="empty-state">No hay pan listo registrado. Los pedidos programados continúan funcionando normalmente.</div>';
+  icons();
+}
+
+function readyBatchFromRow(row) {
+  const expiresValue = row.querySelector(
+    '[data-ready-field="expiresAt"]',
+  ).value;
+  return {
+    quantityAvailable: Number(
+      row.querySelector('[data-ready-field="quantityAvailable"]').value,
+    ),
+    expiresAt: new Date(expiresValue).toISOString(),
+    pickupEnabled: row.querySelector('[data-ready-field="pickupEnabled"]')
+      .checked,
+    deliveryEnabled: row.querySelector('[data-ready-field="deliveryEnabled"]')
+      .checked,
+    note: row.querySelector('[data-ready-field="note"]').value,
+  };
 }
 
 function renderSchedules() {
@@ -475,6 +608,7 @@ function renderAll() {
       ? "Modo PRODUCCIÓN activo: el bot responde a todos excepto a los números bloqueados."
       : `Modo SOLO PRUEBAS activo: el bot responde únicamente a ${activeAutomation.allowedPhones.length} números permitidos.`;
   renderCatalog();
+  renderReadyInventory();
   renderSchedules();
   renderRescheduling();
   renderAutomation();
@@ -546,6 +680,11 @@ async function loadDashboard(showMessage = false) {
   setLoading(button, true);
   try {
     state.dashboard = await api("/api/dashboard");
+    state.dashboard.readyInventory = Array.isArray(
+      state.dashboard.readyInventory,
+    )
+      ? state.dashboard.readyInventory
+      : [];
     state.dashboard.promotions = {
       freeBramptonDelivery:
         state.dashboard.promotions?.freeBramptonDelivery !== false,
@@ -625,6 +764,86 @@ document.querySelector("#saveCatalogButton").addEventListener("click", async (ev
     showToast(error.message, true);
   } finally {
     setLoading(button, false);
+  }
+});
+
+elements.readyInventoryForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = document.querySelector("#addReadyInventoryButton");
+  setLoading(button, true);
+  try {
+    const expiresAt = new Date(
+      document.querySelector("#readyExpiresAt").value,
+    );
+    if (Number.isNaN(expiresAt.getTime())) {
+      throw new Error("Selecciona una hora límite válida.");
+    }
+    await api("/api/ready-inventory", {
+      method: "POST",
+      body: JSON.stringify({
+        productId: document.querySelector("#readyProduct").value,
+        quantityAvailable: Number(
+          document.querySelector("#readyQuantity").value,
+        ),
+        expiresAt: expiresAt.toISOString(),
+        pickupEnabled: document.querySelector("#readyPickup").checked,
+        deliveryEnabled: document.querySelector("#readyDelivery").checked,
+        note: document.querySelector("#readyNote").value,
+      }),
+    });
+    document.querySelector("#readyQuantity").value = "1";
+    document.querySelector("#readyNote").value = "";
+    document.querySelector("#readyExpiresAt").value = defaultReadyExpiry();
+    await loadDashboard();
+    showToast("Pan listo registrado y disponible para el agente.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    setLoading(button, false);
+  }
+});
+
+elements.readyInventoryRows.addEventListener("click", async (event) => {
+  const saveButton = event.target.closest(".save-ready-batch");
+  const removeButton = event.target.closest(".remove-ready-batch");
+  if (!saveButton && !removeButton) return;
+  const row = event.target.closest(".ready-inventory-row");
+  const batchId = row?.dataset.batchId;
+  if (!row || !batchId) return;
+
+  if (removeButton) {
+    if (
+      !window.confirm(
+        "¿Eliminar este lote? Las piezas ya reservadas en pedidos no se recuperarán.",
+      )
+    ) {
+      return;
+    }
+    setLoading(removeButton, true);
+    try {
+      await api(`/api/ready-inventory/${encodeURIComponent(batchId)}`, {
+        method: "DELETE",
+      });
+      await loadDashboard();
+      showToast("Lote eliminado del pan listo.");
+    } catch (error) {
+      showToast(error.message, true);
+      setLoading(removeButton, false);
+    }
+    return;
+  }
+
+  setLoading(saveButton, true);
+  try {
+    await api(`/api/ready-inventory/${encodeURIComponent(batchId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(readyBatchFromRow(row)),
+    });
+    await loadDashboard();
+    showToast("Disponibilidad de pan listo actualizada.");
+  } catch (error) {
+    showToast(error.message, true);
+    setLoading(saveButton, false);
   }
 });
 

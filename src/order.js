@@ -72,6 +72,7 @@ function normalizeOrder({
       currency: text(product.currency || currency),
       lineTotal: lineTotal(unitPrice, quantity),
       isLogistics,
+      source: isLogistics ? "LOGISTICA" : "PRODUCCION_NUEVA",
     };
   });
 
@@ -174,6 +175,10 @@ function itemRow(item) {
     item.currency,
     item.lineTotal,
     yesNo(item.isLogistics),
+    text(
+      item.source ||
+        (item.isLogistics ? "LOGISTICA" : "PRODUCCION_NUEVA"),
+    ),
   ];
 }
 

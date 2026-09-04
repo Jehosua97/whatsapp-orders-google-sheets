@@ -6,6 +6,7 @@ const {
   OpenAiBusinessAssistant,
   buildBusinessContext,
   explicitConfirmation,
+  guardNaturalPlan,
   groundedRewrite,
   normalizePlan,
   validatePlannedInput,
@@ -38,7 +39,7 @@ const config = {
   closures: [],
 };
 
-test("la fuente enviada a la IA contiene solo el catalogo activo", () => {
+test("la IA distingue disponibilidad semanal de capacidades del negocio", () => {
   const context = buildBusinessContext({
     customerMessage: "Tienes pan de muerto?",
     session: { step: "MENU", quantities: {} },
@@ -50,6 +51,16 @@ test("la fuente enviada a la IA contiene solo el catalogo activo", () => {
   assert.deepEqual(
     context.businessTruth.catalog.map((product) => product.name),
     ["Conchitas Chocolate"],
+  );
+  assert.deepEqual(
+    context.businessTruth.capabilities.map((product) => ({
+      name: product.name,
+      availableThisWeek: product.availableThisWeek,
+    })),
+    [
+      { name: "Conchitas Chocolate", availableThisWeek: true },
+      { name: "Pan de muerto", availableThisWeek: false },
+    ],
   );
   assert.equal(context.businessTruth.deliveryFeesCad.brampton, 0);
 });
@@ -69,6 +80,17 @@ test("una respuesta informativa nunca conserva acciones de pedido", () => {
       inputs: [],
       reply: "No está disponible.",
       confidence: 0.9,
+      specialRequest: {
+        productName: "",
+        quantity: 0,
+        requestedDate: "",
+        fulfillment: "",
+        city: "",
+        address: "",
+        notes: "",
+        wantsRequest: false,
+      },
+      orderChanges: [],
     },
   );
 });
@@ -96,6 +118,26 @@ test("construye respuestas de catalogo solamente con productos activos", () => {
     ),
     /pan de muerto|inventado/i,
   );
+});
+
+test("que pan tienes se conserva como consulta del catalogo", () => {
+  const plan = guardNaturalPlan(
+    {
+      kind: "ANSWER",
+      answerType: "CATALOG",
+      productIds: ["chocolate"],
+      inputs: [],
+      reply: "Claro, te digo lo disponible.",
+      confidence: 1,
+      specialRequest: {},
+      orderChanges: [],
+    },
+    "Hola, ¿qué pan tienes?",
+    { step: "MENU" },
+    config,
+  );
+  assert.equal(plan.kind, "ANSWER");
+  assert.equal(plan.answerType, "CATALOG");
 });
 
 test("solo acepta una direccion copiada del mensaje del cliente", () => {
@@ -140,6 +182,17 @@ test("rechaza una redaccion que agregue o elimine cifras verificadas", () => {
   );
   assert.equal(
     groundedRewrite(source, "Conchitas Vainilla listas."),
+    false,
+  );
+});
+
+test("rechaza precios malformados aunque la respuesta pueda ser mas breve", () => {
+  assert.equal(
+    groundedRewrite(
+      "Conchitas Vainilla: $3.50 c/u",
+      "Tenemos Conchitas Vainilla a $.50 c/u.",
+      { requireAllFacts: false },
+    ),
     false,
   );
 });

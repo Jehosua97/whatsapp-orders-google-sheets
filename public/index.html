@@ -47,6 +47,11 @@
           <i data-lucide="notebook-tabs"></i>
           <span>Catálogo</span>
         </button>
+        <button class="nav-item" data-view="ready">
+          <i data-lucide="package-open"></i>
+          <span>Pan listo</span>
+          <span class="nav-count" id="readyNavCount">0</span>
+        </button>
         <button class="nav-item" data-view="schedules">
           <i data-lucide="calendar-clock"></i>
           <span>Horarios</span>
@@ -136,6 +141,73 @@
             </div>
             <div id="catalogRows"></div>
           </div>
+        </section>
+
+        <section class="view" id="readyView">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Inventario para hoy</p>
+              <h1>Pan listo</h1>
+            </div>
+          </div>
+
+          <section class="workflow-note" aria-label="Cómo usa el bot el pan listo">
+            <div class="workflow-note-heading">
+              <i data-lucide="sparkles"></i>
+              <div>
+                <strong>Acelera una venta sin limitar lo que el cliente quería</strong>
+                <p>El bot no anuncia estas cantidades como menú. Primero pregunta qué producto y cuántas piezas desea la persona; sólo consulta este inventario si pide algo para hoy o inmediato.</p>
+              </div>
+            </div>
+            <div class="workflow-example">
+              <i data-lucide="wheat"></i>
+              <p><strong>Un pedido futuro siempre es producción nueva:</strong> si el cliente quiere 8 conchas frescas para el sábado, se programan las 8 para hornear y no se descuentan piezas de esta sección.</p>
+            </div>
+          </section>
+
+          <form class="ready-add-card" id="readyInventoryForm">
+            <div class="ready-add-heading">
+              <div>
+                <p class="eyebrow">Nuevo lote</p>
+                <h2>Registrar piezas que ya están listas</h2>
+              </div>
+              <i data-lucide="package-plus"></i>
+            </div>
+            <label class="field">
+              <span>Producto</span>
+              <select id="readyProduct" required></select>
+            </label>
+            <label class="field">
+              <span>Piezas disponibles</span>
+              <input id="readyQuantity" type="number" min="1" step="1" value="1" required />
+            </label>
+            <label class="field">
+              <span>Vender hasta</span>
+              <input id="readyExpiresAt" type="datetime-local" required />
+            </label>
+            <fieldset class="ready-services">
+              <legend>Formas de entrega</legend>
+              <label class="check-line">
+                <input id="readyPickup" type="checkbox" checked />
+                <span>Pickup</span>
+              </label>
+              <label class="check-line">
+                <input id="readyDelivery" type="checkbox" checked />
+                <span>Delivery</span>
+              </label>
+            </fieldset>
+            <label class="field ready-note-field">
+              <span>Nota interna opcional</span>
+              <input id="readyNote" type="text" maxlength="160" placeholder="Ej. Lote de la mañana" />
+            </label>
+            <button class="button primary" id="addReadyInventoryButton" type="submit">
+              <i data-lucide="plus"></i>
+              Agregar pan listo
+            </button>
+          </form>
+
+          <div class="summary-strip" id="readySummary"></div>
+          <div class="ready-inventory-list" id="readyInventoryRows"></div>
         </section>
 
         <section class="view" id="schedulesView">
@@ -348,9 +420,9 @@
 
           <section class="settings-card">
             <div>
-              <h2>Usar IA para entender y redactar</h2>
-              <p>La IA interpreta mensajes naturales y mejora la respuesta. El servidor conserva el control de productos, precios, fechas, delivery, mínimos y confirmación.</p>
-              <p><strong>Si OpenAI falla, el bot continúa automáticamente con el flujo verificado tradicional.</strong></p>
+              <h2>Agente de ventas con IA</h2>
+              <p>La IA conduce la conversación completa sin menús ni palabras clave: responde dudas, entiende datos en cualquier orden, prepara el pedido y busca cerrar la venta. Su única fuente de verdad es el catálogo, disponibilidad, precios, horarios, promociones y cierres configurados aquí.</p>
+              <p><strong>Si OpenAI falla, el mensaje se registra para revisión manual y el cliente recibe una sola respuesta indicando que una persona lo confirmará.</strong></p>
             </div>
             <label class="switch" title="Activar inteligencia artificial">
               <input id="aiEnabled" type="checkbox" />
@@ -369,7 +441,7 @@
 
           <div class="notice-bar">
             <i data-lucide="shield-check"></i>
-            <span>La IA no escribe directamente en Google Sheets. Primero propone una interpretación; después el motor del negocio valida cada paso y solo guarda el pedido tras la confirmación explícita del cliente.</span>
+            <span>La IA decide cómo conversar, pero no controla precios ni escribe directamente en Excel. El servidor calcula fechas e importes y sólo guarda después de mostrar un resumen vigente y detectar una confirmación explícita en el mensaje real del cliente.</span>
           </div>
         </section>
 
@@ -423,7 +495,7 @@
             </section>
             <section class="settings-card help-card">
               <i data-lucide="shopping-cart"></i>
-              <div><h2>4. Pedidos por carrito</h2><p>Si el cliente envía un carrito del catálogo de WhatsApp, el bot comienza el flujo automáticamente y pregunta pickup o delivery; no necesita escribir la palabra de inicio.</p></div>
+              <div><h2>4. Pedidos por carrito</h2><p>Si el cliente envía un carrito de WhatsApp, sus productos reconocidos pasan al mismo borrador de la conversación. El agente confirma lo recibido y continúa naturalmente con lo que falte; ya no existe un flujo separado para carritos.</p></div>
             </section>
             <section class="settings-card help-card">
               <i data-lucide="message-square-off"></i>
@@ -441,11 +513,15 @@
             </section>
             <section class="settings-card help-card">
               <i data-lucide="bot"></i>
-              <div><h2>7. Respuestas con IA</h2><p>En <strong>Inteligencia</strong> puedes activar o desactivar la comprensión natural. Cada conversación nueva muestra el aviso “Mensajes generados con IA”. La IA entiende frases como “quiero una docena de vainilla”, pero el catálogo, los precios, la disponibilidad, el mínimo y el total siempre los valida el sistema antes de responder. Si solicitan un producto fuera del catálogo, no se sustituye por otro: se muestran los productos vigentes y se ofrece revisión manual como pedido especial.</p></div>
+              <div><h2>7. Agente de ventas con IA</h2><p>En <strong>Inteligencia</strong> puedes activar o desactivar al agente. Cada conversación nueva muestra “Mensajes generados con IA”. Los productos activos son la venta normal de esta semana; los inactivos siguen siendo capacidades y se registran como solicitudes especiales. El cliente puede preguntar, agregar productos o cambiar de idea en cualquier momento sin seguir pasos ni escribir números de opción.</p></div>
+            </section>
+            <section class="settings-card help-card">
+              <i data-lucide="package-open"></i>
+              <div><h2>8. Registrar y vender pan listo</h2><p>En <strong>Pan listo</strong>, selecciona el producto, escribe cuántas piezas reales quedaron disponibles, define hasta qué hora conservan la calidad que quieres vender y activa pickup, delivery o ambos. El bot no muestra estas cantidades como menú: primero entiende cuánto quería el cliente. Sólo ofrece entrega hoy si el lote cubre el pedido completo; si no alcanza, conserva la cantidad solicitada y ofrece producirla fresca en una fecha programada. Los pedidos futuros nunca consumen este inventario.</p><p>La reserva se descuenta únicamente al confirmar el pedido y se vuelve a validar en ese instante para evitar vender la misma pieza dos veces. Si Excel falla al guardar, el descuento se revierte. Una cancelación posterior no devuelve piezas automáticamente: el administrador decide si todavía cumplen calidad y las vuelve a registrar.</p></div>
             </section>
             <section class="settings-card help-card">
               <i data-lucide="shield-alert"></i>
-              <div><h2>8. Protección contra fallas</h2><p>Si OpenAI tarda demasiado, rechaza la llave o no está disponible, el pedido no se pierde: el bot vuelve al menú y las preguntas verificadas. Nunca guarda un pedido sin mostrar el resumen final y recibir una confirmación explícita.</p></div>
+              <div><h2>9. Protección contra fallas</h2><p>Un pedido normal sólo se guarda después de calcularlo en el servidor, mostrar el resumen vigente y recibir un “sí” explícito en un mensaje posterior. Si el cliente cambia algo junto con ese “sí”, se exige un resumen nuevo. Si OpenAI no está disponible, el mensaje queda como revisión manual “Por confirmar”.</p></div>
             </section>
           </div>
         </section>

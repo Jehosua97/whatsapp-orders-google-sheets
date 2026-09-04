@@ -44,7 +44,7 @@ function fallbackProductName(value) {
   const match = text.match(
     /\b(pan(?:es)?(?:\s+de\s+[\p{L}0-9]+(?:\s+[\p{L}0-9]+)?)?|rol(?:es)?(?:\s+de\s+[\p{L}0-9]+(?:\s+[\p{L}0-9]+)?)?|croissants?|pasteles?|galletas?|tamales?|empanadas?|donas?|bisquets?|baguettes?|muffins?|cupcakes?)\b/iu,
   );
-  return compact(match?.[0] || text);
+  return compact(match?.[0] || "");
 }
 
 function fallbackQuantity(value) {
@@ -79,6 +79,7 @@ function copiedFromMessage(value, customerMessage) {
 }
 
 function cleanRequest(request = {}, customerMessage = "") {
+  const message = normalized(customerMessage);
   const productName = copiedFromMessage(request.productName, customerMessage)
     ? compact(request.productName)
     : fallbackProductName(customerMessage);
@@ -92,12 +93,23 @@ function cleanRequest(request = {}, customerMessage = "") {
     requestedDate: copiedFromMessage(request.requestedDate, customerMessage)
       ? compact(request.requestedDate)
       : "",
-    fulfillment: ["PICKUP", "DELIVERY"].includes(request.fulfillment)
-      ? request.fulfillment
-      : "",
-    city: ["BRAMPTON", "MISSISSAUGA", "OTHER"].includes(request.city)
-      ? request.city
-      : "",
+    fulfillment:
+      request.fulfillment === "PICKUP" &&
+      /\b(PICKUP|RECOGER|RECOGIDA|PASAR POR|VOY POR)\b/.test(message)
+        ? "PICKUP"
+        : request.fulfillment === "DELIVERY" &&
+            /\b(DELIVERY|ENTREGA|DOMICILIO)\b/.test(message)
+          ? "DELIVERY"
+          : "",
+    city:
+      request.city === "BRAMPTON" && /\bBRAMPTON\b/.test(message)
+        ? "BRAMPTON"
+        : request.city === "MISSISSAUGA" &&
+            /\bMISSISSAUGA|MISSISAUGA|MISSISAGA\b/.test(message)
+          ? "MISSISSAUGA"
+          : request.city === "OTHER" && request.city
+            ? "OTHER"
+            : "",
     address: copiedFromMessage(request.address, customerMessage)
       ? compact(request.address)
       : "",
@@ -131,6 +143,7 @@ function withoutSpecialState(session) {
   const restored = { ...session };
   delete restored.specialRequest;
   delete restored.specialReturnSession;
+  delete restored.specialReturnPrompt;
   return restored;
 }
 
@@ -139,6 +152,7 @@ function startSpecialSession({
   request,
   customerMessage,
   createdSession = false,
+  returnPrompt = "",
   now = new Date(),
 }) {
   const draft = mergeRequest(
@@ -156,6 +170,7 @@ function startSpecialSession({
     step: draft.wantsRequest ? "SPECIAL_DETAILS" : "SPECIAL_OFFER",
     specialRequest: draft,
     specialReturnSession: createdSession ? null : withoutSpecialState(session),
+    specialReturnPrompt: createdSession ? "" : String(returnPrompt || ""),
   };
 }
 
@@ -219,6 +234,7 @@ function advanceSpecialSession({ session, request, customerMessage }) {
       return {
         canceled: true,
         session: restoreAfterSpecial(current),
+        returnPrompt: current.specialReturnPrompt || "",
         reply: "Entendido. Puedo ayudarte con cualquier producto disponible esta semana.",
       };
     }
@@ -236,6 +252,7 @@ function advanceSpecialSession({ session, request, customerMessage }) {
       return {
         canceled: true,
         session: restoreAfterSpecial(current),
+        returnPrompt: current.specialReturnPrompt || "",
         reply: "Listo, no envié la solicitud especial.",
       };
     }
@@ -244,6 +261,7 @@ function advanceSpecialSession({ session, request, customerMessage }) {
         save: true,
         session: current,
         nextSession: restoreAfterSpecial(current),
+        returnPrompt: current.specialReturnPrompt || "",
       };
     }
   }
@@ -338,7 +356,17 @@ function isSpecialSession(session) {
   return String(session?.step || "").startsWith("SPECIAL_");
 }
 
+function abandonSpecialSession(session) {
+  const restored = restoreAfterSpecial(session);
+  if (restored) return restored;
+  return {
+    ...withoutSpecialState(session),
+    step: "MENU",
+  };
+}
+
 module.exports = {
+  abandonSpecialSession,
   advanceSpecialSession,
   buildSpecialOrder,
   cleanRequest,

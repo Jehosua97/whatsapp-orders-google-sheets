@@ -3,10 +3,15 @@
 const path = require("node:path");
 const QRCode = require("qrcode");
 const { Client, LocalAuth } = require("whatsapp-web.js");
+const { handleAgentMessage } = require("./whatsapp-agent");
+const {
+  ConversationStateStore: AgentSessionStore,
+} = require("./session-store");
 const { DEFAULT_PICKUP_ADDRESS } = require("./business-details");
 const { BotPauseState, botControlCommand } = require("./bot-pause-state");
 const { isAllowedChat } = require("./auto-reply-state");
 const {
+  catalogProductMention,
   guardNaturalPlan,
   isConfirmationStep,
   validatePlannedInput,
@@ -23,6 +28,9 @@ const {
   ConversationStateStore,
   menuMessage,
   newSession,
+  orderSummary,
+  scheduleOptions,
+  totalPieces,
   updatedMessage,
 } = require("./conversation-flow");
 const {
@@ -39,6 +47,13 @@ const {
   parseFulfillmentText,
 } = require("./fulfillment");
 const { formatMoney, normalizeOrder } = require("./order");
+const {
+  abandonSpecialSession,
+  advanceSpecialSession,
+  buildSpecialOrder,
+  isSpecialSession,
+  startSpecialSession,
+} = require("./special-order-flow");
 
 const ORDER_RETRY_DELAYS_MS = [0, 1000, 2500];
 const CLOSED_ORDER_STATUSES = new Set(["CANCELADO", "ENTREGADO"]);
@@ -203,7 +218,7 @@ async function handleSystemDisableCommand({
   await message.reply(
     "Sistema desactivado. El bot no volvera a iniciar automaticamente.",
   );
-  logger.log(`Sistemad}`);
+  logger.log("Sistema desactivado por el administrador.");
   shutdownSystem();
   return true;
 }
@@ -523,6 +538,111 @@ function aiInputs(plan) {
   return plan.inputs.slice(0, 8);
 }
 
+function scheduleDateLabel(option) {
+  try {
+    return new Intl.DateTimeFormat("es-MX", {
+      day: "numeric",
+      month: "long",
+      timeZone: "UTC",
+    }).format(new Date(`${option.date}T12:00:00.000Z`));
+  } catch {
+    return option.date || "";
+  }
+}
+
+function applyAiOrderChanges(session, changes, config, now = new Date()) {
+  if (
+    !session ||
+    session.source === "CART" ||
+    ["COMPLETED", "CANCELED"].includes(session.step) ||
+    String(session.step || "").startsWith("UPDATE")
+  ) {
+    return null;
+  }
+  const catalog = (config.catalog || []).filter(
+    (product) => product.active !== false,
+  );
+  const quantities = { ...(session.quantities || {}) };
+  const applied = [];
+  for (const change of changes || []) {
+    const product = catalog.find((item) => item.id === change.productId);
+    if (!product) continue;
+    const current = Number(quantities[product.id] || 0);
+    const quantity = Number(change.quantity || 0);
+    if (change.action === "ADD" && quantity > 0) {
+      quantities[product.id] = current + quantity;
+    } else if (change.action === "SET" && quantity > 0) {
+      quantities[product.id] = quantity;
+    } else if (change.action === "REMOVE") {
+      quantities[product.id] = quantity > 0 ? Math.max(0, current - quantity) : 0;
+    } else {
+      continue;
+    }
+    if (quantities[product.id] <= 0) delete quantities[product.id];
+    applied.push({ ...change, product });
+  }
+  if (!applied.length || !Object.keys(quantities).length) return null;
+
+  const productOrder = [
+    ...(session.productOrder || []).filter((id) => Number(quantities[id]) > 0),
+    ...Object.keys(quantities).filter(
+      (id) => !(session.productOrder || []).includes(id),
+    ),
+  ];
+  const pieces = totalPieces(quantities);
+  const minimum = Number(config.minimumOrderPieces || 0);
+  if (pieces < minimum) {
+    return {
+      session,
+      applied: false,
+      reply: `Ese cambio dejaría el pedido en ${pieces} piezas y el mínimo es ${minimum}. Dime qué otra cantidad prefieres.`,
+    };
+  }
+  const options = scheduleOptions(config, now, "", productOrder);
+  if (!options.length) {
+    return {
+      session,
+      reply:
+        "No encontré una fecha compatible para combinar esos productos. Puedo registrar la combinación como solicitud especial para revisión.",
+      applied: false,
+    };
+  }
+
+  const next = {
+    ...session,
+    step: "DAY",
+    quantities,
+    productOrder,
+    productIndex: productOrder.length,
+    schedule: null,
+    scheduleOptions: options,
+    fulfillment: null,
+    deliveryAddress: "",
+    addressType: "",
+  };
+  const changeLines = applied.map(({ action, product, quantity }) => {
+    if (action === "ADD") return `Agregué ${quantity} de ${product.name}.`;
+    if (action === "SET") return `${product.name} quedó en ${quantity} piezas.`;
+    return quantity > 0
+      ? `Quité ${quantity} de ${product.name}.`
+      : `Quité ${product.name} del pedido.`;
+  });
+  const nextQuestion = [
+    "¿Para qué día lo necesitas?",
+    ...options.map(
+      (option, index) =>
+        `${index + 1} - ${option.name} ${scheduleDateLabel(option)}`,
+    ),
+  ].join("\n");
+  return {
+    session: next,
+    applied: true,
+    reply: [...changeLines, "", orderSummary(next, config), "", nextQuestion].join(
+      "\n",
+    ),
+  };
+}
+
 function canonicalAiInput(step, input, session) {
   const value = String(input || "").trim();
   const normalized = normalizedForComparison(value);
@@ -804,6 +924,11 @@ async function handleConversationMessage({
   const discloseAi =
     createdSession && Boolean(aiAssistant?.enabled?.(config));
 
+  if (isSpecialSession(session) && catalogProductMention(customerMessage, config)) {
+    session = abandonSpecialSession(session);
+    conversationState.set(message.from, session);
+  }
+
   const plan = await naturalTurnPlan({
     aiAssistant,
     customerMessage,
@@ -819,16 +944,103 @@ async function handleConversationMessage({
       ? menuMessage(session.customerName, config)
       : "");
 
+  if (plan?.kind === "SPECIAL" || isSpecialSession(session)) {
+    if (!isSpecialSession(session)) {
+      session = startSpecialSession({
+        session,
+        request: plan?.specialRequest,
+        customerMessage,
+        createdSession,
+        returnPrompt: currentPrompt,
+      });
+    }
+    const special = advanceSpecialSession({
+      session,
+      request: plan?.specialRequest || {},
+      customerMessage,
+    });
+
+    if (special.save) {
+      const order = buildSpecialOrder(special.session, message);
+      await store.saveOrder(order);
+      conversationState.set(message.from, special.nextSession);
+      const continuation = special.returnPrompt
+        ? `\n\nPodemos continuar donde estábamos:\n${special.returnPrompt}`
+        : "";
+      const verifiedReply = [
+        "✅ Ya registré tu solicitud especial en Excel.",
+        `${order.summary.productSummary}.`,
+        "Quedó por confirmar: el administrador revisará disponibilidad, precio y fecha antes de prepararla.",
+      ].join("\n") + continuation;
+      const reply = await groundedReply({
+        aiAssistant,
+        customerMessage,
+        verifiedReply,
+        session: special.nextSession || special.session,
+        config,
+        logger,
+      });
+      await message.reply(withAiDisclosure(reply, discloseAi));
+      return true;
+    }
+
+    conversationState.set(message.from, special.session);
+    const continuation = special.returnPrompt
+      ? `\n\n${special.returnPrompt}`
+      : "";
+    const reply = await groundedReply({
+      aiAssistant,
+      customerMessage,
+      verifiedReply: `${special.reply || ""}${continuation}`.trim(),
+      session: special.session || session,
+      config,
+      logger,
+    });
+    await message.reply(withAiDisclosure(reply, discloseAi));
+    return true;
+  }
+
+  if (plan?.kind === "ORDER_CHANGE") {
+    const changed = applyAiOrderChanges(
+      session,
+      plan.orderChanges,
+      config,
+    );
+    const nextSession = changed?.session || session;
+    conversationState.set(message.from, nextSession);
+    const verifiedReply =
+      changed?.reply || "¿Qué producto y cantidad deseas cambiar?";
+    const reply = await groundedReply({
+      aiAssistant,
+      customerMessage,
+      verifiedReply,
+      session: nextSession,
+      config,
+      logger,
+    });
+    await message.reply(withAiDisclosure(reply, discloseAi));
+    return true;
+  }
+
   if (plan && !plannedInputs.length) {
     conversationState.set(message.from, session);
+    const conversationalAnswer = ["GREETING", "GENERAL", "UNSUPPORTED"].includes(
+      plan.answerType,
+    )
+      ? String(plan.reply || "").trim()
+      : "";
     const verifiedAnswer =
       plan.kind === "ANSWER"
-        ? verifiedKnowledgeReply(plan, session, config)
+        ? conversationalAnswer || verifiedKnowledgeReply(plan, session, config)
         : plan.reply;
-    const factualReply = planReply(
-      { ...plan, reply: verifiedAnswer },
-      currentPrompt,
-    );
+    const transition =
+      plan.kind === "ANSWER" && !conversationalAnswer
+        ? String(plan.reply || "").trim()
+        : "";
+    const factualReply =
+      plan.kind === "ANSWER"
+        ? [verifiedAnswer, transition].filter(Boolean).join("\n\n")
+        : String(plan.reply || "").trim() || currentPrompt;
     const reply =
       plan.kind === "ANSWER"
         ? await groundedReply({
@@ -968,9 +1180,13 @@ async function handleCartConversationMessage({
   input,
   logger = console,
 }) {
-  const session = conversationState.get(message.from);
+  let session = conversationState.get(message.from);
   if (!session || session.source !== "CART") return false;
   const customerMessage = String(input ?? message.body ?? "");
+  if (isSpecialSession(session) && catalogProductMention(customerMessage, config)) {
+    session = abandonSpecialSession(session);
+    conversationState.set(message.from, session);
+  }
   const plan = await naturalTurnPlan({
     aiAssistant,
     customerMessage,
@@ -981,15 +1197,77 @@ async function handleCartConversationMessage({
   });
   const plannedInputs = aiInputs(plan);
 
+  if (plan?.kind === "SPECIAL" || isSpecialSession(session)) {
+    const specialSession = isSpecialSession(session)
+      ? session
+      : startSpecialSession({
+          session,
+          request: plan?.specialRequest,
+          customerMessage,
+          returnPrompt: lastBotMessage,
+        });
+    const special = advanceSpecialSession({
+      session: specialSession,
+      request: plan?.specialRequest || {},
+      customerMessage,
+    });
+    if (special.save) {
+      const order = buildSpecialOrder(special.session, message);
+      await store.saveOrder(order);
+      conversationState.set(message.from, special.nextSession);
+      const continuation = special.returnPrompt
+        ? `\n\nPodemos continuar donde estábamos:\n${special.returnPrompt}`
+        : "";
+      const reply = await groundedReply({
+        aiAssistant,
+        customerMessage,
+        verifiedReply:
+          [
+            "✅ Ya registré tu solicitud especial en Excel.",
+            `${order.summary.productSummary}.`,
+            "Quedó por confirmar: revisaremos disponibilidad, precio y fecha antes de prepararla.",
+          ].join("\n") + continuation,
+        session: special.nextSession || special.session,
+        config,
+        logger,
+      });
+      await message.reply(reply);
+      return true;
+    }
+    conversationState.set(message.from, special.session);
+    const continuation = special.returnPrompt
+      ? `\n\n${special.returnPrompt}`
+      : "";
+    const reply = await groundedReply({
+      aiAssistant,
+      customerMessage,
+      verifiedReply: `${special.reply || ""}${continuation}`.trim(),
+      session: special.session || session,
+      config,
+      logger,
+    });
+    await message.reply(reply);
+    return true;
+  }
+
   if (plan && !plannedInputs.length) {
+    const conversationalAnswer = ["GREETING", "GENERAL", "UNSUPPORTED"].includes(
+      plan.answerType,
+    )
+      ? String(plan.reply || "").trim()
+      : "";
     const verifiedAnswer =
       plan.kind === "ANSWER"
-        ? verifiedKnowledgeReply(plan, session, config)
+        ? conversationalAnswer || verifiedKnowledgeReply(plan, session, config)
         : plan.reply;
-    const factualReply = planReply(
-      { ...plan, reply: verifiedAnswer },
-      lastBotMessage,
-    );
+    const transition =
+      plan.kind === "ANSWER" && !conversationalAnswer
+        ? String(plan.reply || "").trim()
+        : "";
+    const factualReply =
+      plan.kind === "ANSWER"
+        ? [verifiedAnswer, transition].filter(Boolean).join("\n\n")
+        : String(plan.reply || "").trim() || lastBotMessage;
     const reply =
       plan.kind === "ANSWER"
         ? await groundedReply({
@@ -1120,16 +1398,20 @@ function createWhatsAppClient({
   disableSystem = disableScheduledBot,
   shutdownSystem = requestGracefulShutdown,
   store,
+  inventoryStore,
   logger = console,
 }) {
   const qrFile = path.resolve("whatsapp-qr.png");
   const messageQueues = new Map();
   const conversationState =
     suppliedConversationState ||
-    new ConversationStateStore(config.conversationStateFile, {
-      pendingTimeoutMs:
-        config.conversationSessionTimeoutHours * 60 * 60 * 1000,
-    });
+    new (config.aiAgentMode === false
+      ? ConversationStateStore
+      : AgentSessionStore)(config.conversationStateFile, {
+        pendingTimeoutMs:
+          config.conversationSessionTimeoutHours * 60 * 60 * 1000,
+        transcriptTurns: config.agentTranscriptTurns,
+      });
   const pauseState =
     suppliedPauseState || new BotPauseState(config.botPauseStateFile);
   const client = new Client({
@@ -1248,6 +1530,29 @@ function createWhatsAppClient({
           pauseState.rememberLastMessage(message.from, content);
           return sent;
         };
+      }
+
+      if (runtimeConfig.aiAgentMode !== false) {
+        if (isLiveLocationMessage(message)) {
+          await message.reply(liveLocationAddressReply());
+          return;
+        }
+        if (["chat", "order", "location"].includes(message.type)) {
+          const customer = await customerIdentity(message, client);
+          await handleAgentMessage({
+            message,
+            customer,
+            config: runtimeConfig,
+            sessionStore: conversationState,
+            aiAssistant,
+            store,
+            inventoryStore,
+            pauseState,
+            loadOrder: loadOrderWithRetry,
+            logger,
+          });
+        }
+        return;
       }
 
       if (isLiveLocationMessage(message)) {

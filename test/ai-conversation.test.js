@@ -194,6 +194,68 @@ test("entiende producto y cantidad en una sola frase sin confirmar solo", async 
   assert.equal(conversationState.get("14370000000@c.us").step, "COMPLETED");
 });
 
+test("agrega otro producto aunque el bot estuviera preguntando la fecha", async () => {
+  const conversationState = stateStore("add-product-during-date");
+  const replies = [];
+  const aiAssistant = {
+    enabled: () => true,
+    interpretTurn: async ({ customerMessage: body }) =>
+      /vainilla/i.test(body)
+        ? {
+            kind: "ORDER_CHANGE",
+            answerType: "ORDER",
+            productIds: [],
+            inputs: [],
+            reply: "",
+            confidence: 1,
+            specialRequest: {},
+            orderChanges: [
+              { action: "ADD", productId: "vanilla", quantity: 7 },
+            ],
+          }
+        : {
+            kind: "ADVANCE",
+            answerType: "ORDER",
+            productIds: [],
+            inputs: ["1", "6"],
+            reply: "",
+            confidence: 1,
+            specialRequest: {},
+            orderChanges: [],
+          },
+    rewriteVerifiedReply: async ({ verifiedReply }) => verifiedReply,
+  };
+
+  await handleConversationMessage({
+    message: customerMessage("Quiero 6 conchas de chocolate", replies),
+    client: {},
+    store: {},
+    config: testConfig(),
+    conversationState,
+    aiAssistant,
+    logger: silentLogger,
+  });
+  assert.equal(conversationState.get("14370000000@c.us").step, "DAY");
+
+  await handleConversationMessage({
+    message: customerMessage("También quiero 7 de vainilla", replies),
+    client: {},
+    store: {},
+    config: testConfig(),
+    conversationState,
+    aiAssistant,
+    logger: silentLogger,
+  });
+
+  const session = conversationState.get("14370000000@c.us");
+  assert.equal(session.step, "DAY");
+  assert.deepEqual(session.quantities, { chocolate: 6, vanilla: 7 });
+  assert.equal(session.fulfillment, null);
+  assert.match(replies.at(-1), /Agregué 7 de Conchitas Vainilla/i);
+  assert.match(replies.at(-1), /Total piezas: 13/i);
+  assert.match(replies.at(-1), /¿Para qué día/i);
+});
+
 test("responde sobre un producto inexistente sin modificar el pedido", async () => {
   const conversationState = stateStore("catalog-question");
   const replies = [];
@@ -221,9 +283,82 @@ test("responde sobre un producto inexistente sin modificar el pedido", async () 
     logger: silentLogger,
   });
 
-  assert.equal(conversationState.get("14370000000@c.us").step, "MENU");
-  assert.match(replies[0], /no aparece disponible/i);
-  assert.match(replies[0], /NUESTRO MENU/i);
+  assert.equal(
+    conversationState.get("14370000000@c.us").step,
+    "SPECIAL_OFFER",
+  );
+  assert.match(replies[0], /solicitud especial/i);
+  assert.match(replies[0], /¿Quieres que la tome?/i);
+});
+
+test("sale de la oferta especial cuando el cliente elige un producto activo", async () => {
+  const conversationState = stateStore("leave-special-offer");
+  const replies = [];
+  const aiAssistant = {
+    enabled: () => true,
+    interpretTurn: async ({ customerMessage: body, session }) => {
+      if (/tienes pan/i.test(body)) {
+        return {
+          kind: "SPECIAL",
+          answerType: "SPECIAL_ORDER",
+          productIds: [],
+          inputs: [],
+          reply: "",
+          confidence: 1,
+          specialRequest: {
+            productName: "pan",
+            quantity: 0,
+            requestedDate: "",
+            fulfillment: "",
+            city: "",
+            address: "",
+            notes: "",
+            wantsRequest: false,
+          },
+        };
+      }
+      assert.equal(session.step, "MENU");
+      return {
+        kind: "ADVANCE",
+        answerType: "NONE",
+        productIds: [],
+        inputs: ["2"],
+        reply: "",
+        confidence: 1,
+      };
+    },
+    rewriteVerifiedReply: async ({ verifiedReply }) => verifiedReply,
+  };
+
+  await handleConversationMessage({
+    message: customerMessage("Hola! Tienes pan?", replies),
+    client: {},
+    store: {},
+    config: testConfig(),
+    conversationState,
+    aiAssistant,
+    logger: silentLogger,
+  });
+  assert.equal(
+    conversationState.get("14370000000@c.us").step,
+    "SPECIAL_OFFER",
+  );
+
+  await handleConversationMessage({
+    message: customerMessage("Quiero conchas de vainilla", replies),
+    client: {},
+    store: {},
+    config: testConfig(),
+    conversationState,
+    aiAssistant,
+    logger: silentLogger,
+  });
+
+  const session = conversationState.get("14370000000@c.us");
+  assert.equal(session.step, "QUANTITY");
+  assert.deepEqual(session.productOrder, ["vanilla"]);
+  assert.match(replies.at(-1), /cuántas/i);
+  assert.doesNotMatch(replies.at(-1), /solicitud especial/i);
 });
 
 test("nunca convierte pan de muerto en un producto distinto del catalogo", async () => {
@@ -253,12 +388,12 @@ test("nunca convierte pan de muerto en un producto distinto del catalogo", async
   });
 
   const session = conversationState.get("14370000000@c.us");
-  assert.equal(session.step, "MENU");
+  assert.equal(session.step, "SPECIAL_DETAILS");
   assert.deepEqual(session.quantities, {});
+  assert.equal(session.specialRequest.quantity, 8);
+  assert.match(session.specialRequest.productName, /panes de muerto/i);
   assert.match(replies[0], /^🤖 Aviso: Mensajes generados con IA/);
-  assert.match(replies[0], /pedido especial/i);
-  assert.match(replies[0], /Conchitas Chocolate/i);
-  assert.match(replies[0], /Conchitas Vainilla/i);
+  assert.match(replies[0], /fecha/i);
 });
 
 test("un pedido especial no altera el pedido que ya estaba en curso", async () => {
@@ -300,10 +435,81 @@ test("un pedido especial no altera el pedido que ya estaba en curso", async () =
   });
 
   const session = conversationState.get("14370000000@c.us");
-  assert.equal(session.step, "DAY");
-  assert.deepEqual(session.quantities, { chocolate: 8 });
-  assert.match(replies.at(-1), /pedido especial/i);
-  assert.match(replies.at(-1), /¿Para qué día/i);
+  assert.equal(session.step, "SPECIAL_DETAILS");
+  assert.deepEqual(session.specialReturnSession.quantities, { chocolate: 8 });
+  assert.equal(session.specialReturnSession.step, "DAY");
+  assert.equal(session.specialRequest.quantity, 10);
+  assert.match(replies.at(-1), /fecha/i);
+});
+
+test("guarda una solicitud especial en Excel solo despues de confirmarla", async () => {
+  const conversationState = stateStore("special-save");
+  const replies = [];
+  const savedOrders = [];
+  const aiAssistant = {
+    enabled: () => true,
+    interpretTurn: async ({ customerMessage: body }) => ({
+      kind: "SPECIAL",
+      answerType: "SPECIAL_ORDER",
+      productIds: [],
+      inputs: [],
+      reply: "",
+      confidence: 1,
+      specialRequest: /panes/i.test(body)
+        ? {
+            productName: "panes de muerto",
+            quantity: 8,
+            requestedDate: "sábado",
+            fulfillment: "PICKUP",
+            city: "",
+            address: "",
+            notes: "",
+            wantsRequest: true,
+          }
+        : {},
+    }),
+    rewriteVerifiedReply: async ({ verifiedReply }) => verifiedReply,
+  };
+  const store = {
+    saveOrder: async (order) => {
+      savedOrders.push(order);
+      return { inserted: true };
+    },
+  };
+
+  await handleConversationMessage({
+    message: customerMessage(
+      "Quiero 8 panes de muerto para el sábado, pickup",
+      replies,
+    ),
+    client: {},
+    store,
+    config: testConfig(),
+    conversationState,
+    aiAssistant,
+    logger: silentLogger,
+  });
+  assert.equal(savedOrders.length, 0);
+  assert.equal(
+    conversationState.get("14370000000@c.us").step,
+    "SPECIAL_CONFIRMATION",
+  );
+  assert.match(replies.at(-1), /Precio, disponibilidad y horario/i);
+
+  await handleConversationMessage({
+    message: customerMessage("Sí, envíala", replies),
+    client: {},
+    store,
+    config: testConfig(),
+    conversationState,
+    aiAssistant,
+    logger: silentLogger,
+  });
+  assert.equal(savedOrders.length, 1);
+  assert.equal(savedOrders[0].summary.status, "REVISION_MANUAL");
+  assert.equal(savedOrders[0].summary.kitchenStatus, "Por confirmar");
+  assert.equal(conversationState.get("14370000000@c.us"), null);
+  assert.match(replies.at(-1), /registré tu solicitud especial en Excel/i);
 });
 
 test("si OpenAI falla inicia el flujo tradicional sin perder el mensaje", async () => {

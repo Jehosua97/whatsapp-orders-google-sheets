@@ -84,6 +84,48 @@ test("suma productos repetidos dentro del mismo pedido", () => {
   assert.equal(table.orderRows[0][8], 5);
 });
 
+test("pan listo aparece como pedido pero no se suma a lo que cocina debe preparar", () => {
+  const table = buildKitchenTable(
+    [
+      { orderId: "FRESCO", receivedAt: "2026-08-28T15:00:00.000Z" },
+      {
+        orderId: "LISTO",
+        receivedAt: "2026-08-28T16:00:00.000Z",
+        customerNotes: "PAN LISTO: no producir",
+      },
+    ],
+    new Map([
+      [
+        "FRESCO",
+        [
+          {
+            productName: "Concha de chocolate",
+            quantity: 6,
+            source: "PRODUCCION_NUEVA",
+          },
+        ],
+      ],
+      [
+        "LISTO",
+        [
+          {
+            productName: "Concha de chocolate",
+            quantity: 5,
+            source: "PAN_LISTO",
+          },
+        ],
+      ],
+    ]),
+  );
+
+  assert.deepEqual(table.productNames, ["Concha de chocolate"]);
+  const freshRow = table.orderRows.find((row) => row[0] === "FRESCO");
+  const readyRow = table.orderRows.find((row) => row[0] === "LISTO");
+  assert.equal(freshRow[8], 6);
+  assert.equal(readyRow[8], "");
+  assert.match(readyRow[7], /no producir/i);
+});
+
 test("acomoda hasta diez productos en una sola fila", () => {
   const items = Array.from({ length: 10 }, (_, index) => ({
     productName: `Producto ${String(index + 1).padStart(2, "0")}`,
@@ -130,6 +172,7 @@ test("coloca pedidos entregados al final", () => {
 
 test("un pedido cancelado queda inactivo", () => {
   assert.equal(kitchenStatus({ kitchenStatus: "Cancelado" }), "Cancelado");
+  assert.equal(kitchenStatus({ kitchenStatus: "Por confirmar" }), "Por confirmar");
 });
 
 test("guarda en la hoja interna un status editado por cocina", async () => {
@@ -252,8 +295,8 @@ test("reemplaza productos conservando el mismo ID de pedido", async () => {
   });
 
   assert.deepEqual(clearedRanges, [
-    "'Productos'!A8:I8",
-    "'Productos'!A9:I9",
+    "'Productos'!A8:J8",
+    "'Productos'!A9:J9",
   ]);
   assert.equal(
     updateRequest.requestBody.data[0].range,
@@ -261,7 +304,7 @@ test("reemplaza productos conservando el mismo ID de pedido", async () => {
   );
   assert.equal(
     updateRequest.requestBody.data[1].range,
-    "'Productos'!A3:I3",
+    "'Productos'!A3:J3",
   );
 });
 

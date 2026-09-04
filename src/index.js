@@ -3,8 +3,13 @@
 const { readConfig } = require("./config");
 const { AdminConfigStore } = require("./admin-config");
 const { createAdminServer } = require("./admin-server");
-const { OpenAiBusinessAssistant } = require("./ai-assistant");
-const { ConversationStateStore } = require("./conversation-flow");
+const { OpenAiBusinessAssistant } = require("./openai-client");
+const {
+  ConversationStateStore: AgentSessionStore,
+} = require("./session-store");
+const {
+  ConversationStateStore: LegacyConversationStateStore,
+} = require("./conversation-flow");
 const { GoogleSheetsOrderStore } = require("./google-sheets");
 const { createWhatsAppClient } = require("./whatsapp");
 
@@ -15,11 +20,16 @@ async function main() {
     config.adminConfigFile,
     config,
   );
-  const conversationState = new ConversationStateStore(
+  const SessionStore =
+    config.aiAgentMode === false
+      ? LegacyConversationStateStore
+      : AgentSessionStore;
+  const conversationState = new SessionStore(
     config.conversationStateFile,
     {
       pendingTimeoutMs:
         config.conversationSessionTimeoutHours * 60 * 60 * 1000,
+      transcriptTurns: config.agentTranscriptTurns,
     },
   );
   const aiAssistant = new OpenAiBusinessAssistant({
@@ -30,6 +40,8 @@ async function main() {
   const recoveredSessions = conversationState.lastRecoveryReport;
   if (
     recoveredSessions.resetCart ||
+    recoveredSessions.migratedSessions ||
+    recoveredSessions.clearedSessions ||
     recoveredSessions.clearedConversation ||
     recoveredSessions.removedInvalid
   ) {
@@ -43,12 +55,29 @@ async function main() {
   await store.initialize();
   console.log("Google Sheets listo.");
 
+  const pendingReadyReservations = configStore.pendingReadyReservations();
+  for (const reservation of pendingReadyReservations) {
+    const exists = await store.hasOrder(reservation.orderId);
+    if (exists) {
+      configStore.commitReadyInventory(reservation.orderId);
+      console.log(
+        `Reserva de pan listo confirmada al recuperar: ${reservation.orderId}`,
+      );
+    } else {
+      configStore.rollbackReadyInventory(reservation.orderId);
+      console.log(
+        `Reserva de pan listo devuelta al recuperar: ${reservation.orderId}`,
+      );
+    }
+  }
+
   const whatsapp = createWhatsAppClient({
     config,
     configProvider: () => configStore.runtimeConfig(),
     conversationState,
     aiAssistant,
     store,
+    inventoryStore: configStore,
   });
   const admin = createAdminServer({
     config,

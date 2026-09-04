@@ -73,6 +73,7 @@ const ITEM_HEADERS = [
   "Moneda",
   "Total de linea",
   "Es logistica",
+  "Origen",
 ];
 
 const ITEM_KEYS = [
@@ -85,6 +86,7 @@ const ITEM_KEYS = [
   "currency",
   "lineTotal",
   "isLogistics",
+  "source",
 ];
 
 const PRODUCTION_HEADERS = [
@@ -159,10 +161,18 @@ function isKitchenProduct(item) {
   return item.isLogistics !== "SI" && item.isLogistics !== true;
 }
 
+function isProductionProduct(item) {
+  return (
+    isKitchenProduct(item) &&
+    String(item.source || "").toUpperCase() !== "PAN_LISTO"
+  );
+}
+
 function kitchenStatus(order) {
   const status = String(order.kitchenStatus || "").toLowerCase();
   if (status === "entregado") return "Entregado";
   if (status === "cancelado") return "Cancelado";
+  if (status === "por confirmar") return "Por confirmar";
   return "Confirmado";
 }
 
@@ -171,8 +181,9 @@ function buildKitchenTable(orders, itemsByOrder) {
     const statusRank = (order) => {
       const status = kitchenStatus(order);
       if (status === "Confirmado") return 0;
-      if (status === "Entregado") return 1;
-      return 2;
+      if (status === "Por confirmar") return 1;
+      if (status === "Entregado") return 2;
+      return 3;
     };
     const statusDifference = statusRank(left) - statusRank(right);
     if (statusDifference) return statusDifference;
@@ -182,7 +193,7 @@ function buildKitchenTable(orders, itemsByOrder) {
     ...new Set(
       sortedOrders.flatMap((order) =>
         (itemsByOrder.get(String(order.orderId)) || [])
-          .filter(isKitchenProduct)
+          .filter(isProductionProduct)
           .map((item) => item.productName)
           .filter(Boolean),
       ),
@@ -209,7 +220,7 @@ function buildKitchenTable(orders, itemsByOrder) {
   const orderRows = sortedOrders.map((order) => {
     const quantities = new Map();
     for (const item of itemsByOrder.get(String(order.orderId)) || []) {
-      if (!isKitchenProduct(item)) continue;
+      if (!isProductionProduct(item)) continue;
       quantities.set(
         item.productName,
         (quantities.get(item.productName) || 0) + Number(item.quantity || 0),
@@ -577,7 +588,7 @@ class GoogleSheetsOrderStore {
     const title = quoteSheetTitle(this.config.itemsSheet);
     const response = await this.sheets.spreadsheets.values.get({
       spreadsheetId: this.config.spreadsheetId,
-      range: `${title}!A2:I`,
+      range: `${title}!A2:J`,
     });
     return (response.data.values || [])
       .map((row, index) => ({
@@ -627,7 +638,7 @@ class GoogleSheetsOrderStore {
               values: [summaryRow(order.summary)],
             },
             {
-              range: `${itemsTitle}!A${nextItemRow}:I${lastItemRow}`,
+              range: `${itemsTitle}!A${nextItemRow}:J${lastItemRow}`,
               values: order.items.map(itemRow),
             },
           ],
@@ -686,7 +697,7 @@ class GoogleSheetsOrderStore {
           spreadsheetId: this.config.spreadsheetId,
           requestBody: {
             ranges: existingItems.map(
-              (item) => `${itemsTitle}!A${item.sheetRow}:I${item.sheetRow}`,
+              (item) => `${itemsTitle}!A${item.sheetRow}:J${item.sheetRow}`,
             ),
           },
         });
@@ -709,7 +720,7 @@ class GoogleSheetsOrderStore {
               values: [summaryRow(updatedSummary)],
             },
             {
-              range: `${itemsTitle}!A${nextItemRow}:I${lastItemRow}`,
+              range: `${itemsTitle}!A${nextItemRow}:J${lastItemRow}`,
               values: order.items.map(itemRow),
             },
           ],
@@ -818,7 +829,7 @@ class GoogleSheetsOrderStore {
         if (!order.requestedDate) continue;
         const items = await this.getOrderItems(order.orderId);
         for (const item of items) {
-          if (item.isLogistics === "SI") continue;
+          if (!isProductionProduct(item)) continue;
           const key = `${order.requestedDate}:${item.productId}`;
           const current = groups.get(key) || {
             date: order.requestedDate,
@@ -874,5 +885,6 @@ module.exports = {
   columnName,
   fulfillmentLabel,
   kitchenStatus,
+  isProductionProduct,
   quoteSheetTitle,
 };

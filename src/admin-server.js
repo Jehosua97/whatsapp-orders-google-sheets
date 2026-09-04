@@ -201,6 +201,7 @@ function createAdminServer({
       }));
       response.json({
         catalog: state.catalog,
+        readyInventory: state.readyInventory,
         schedules: state.schedules,
         closures,
         notifications: state.notifications.slice(-50).reverse(),
@@ -229,6 +230,37 @@ function createAdminServer({
     try {
       const state = configStore.updateCatalog(request.body.catalog);
       response.json({ catalog: state.catalog });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/ready-inventory", (request, response, next) => {
+    try {
+      const batch = configStore.addReadyInventory(request.body, new Date());
+      response.status(201).json({ batch });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/ready-inventory/:batchId", (request, response, next) => {
+    try {
+      const batch = configStore.updateReadyInventory(
+        request.params.batchId,
+        request.body,
+        new Date(),
+      );
+      response.json({ batch });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/ready-inventory/:batchId", (request, response, next) => {
+    try {
+      configStore.removeReadyInventory(request.params.batchId, new Date());
+      response.status(204).end();
     } catch (error) {
       next(error);
     }
@@ -435,16 +467,37 @@ function createAdminServer({
             .filter(Boolean)
             .join(" | "),
         });
-        conversationState.updateByOrderId(order.orderId, (session) => ({
-          ...session,
-          schedule: {
-            ...session.schedule,
-            id: nextSchedule.id,
-            name: nextSchedule.name,
-            date: nextSchedule.date,
-            timeWindow: nextSchedule.timeWindow,
-          },
-        }));
+        conversationState.updateByOrderId(order.orderId, (session) =>
+          session.draft
+            ? {
+                ...session,
+                draft: {
+                  ...session.draft,
+                  fecha: nextSchedule.date,
+                  ventana: nextSchedule.timeWindow,
+                },
+                firma_resumen: "",
+                firma_resumen_turno: -1,
+                transcript: [
+                  ...(session.transcript || []),
+                  {
+                    role: "assistant",
+                    content: message,
+                    ts: new Date().toISOString(),
+                  },
+                ].slice(-24),
+              }
+            : {
+                ...session,
+                schedule: {
+                  ...session.schedule,
+                  id: nextSchedule.id,
+                  name: nextSchedule.name,
+                  date: nextSchedule.date,
+                  timeWindow: nextSchedule.timeWindow,
+                },
+              },
+        );
         configStore.recordNotification({
           orderId: String(order.orderId),
           customerName: String(order.customerName || "Cliente"),

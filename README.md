@@ -232,11 +232,28 @@ the numeric wording literally. For example:
 Buenas tardes, quiero una docena de conchas de vainilla para pickup.
 ```
 
-The model does not write orders or calculate business values. It returns a
-structured interpretation that is passed through the existing deterministic
-flow. The application remains the authority for active catalog products,
-quantities, minimum order, production dates, closures, fulfillment, delivery
-fees, addresses, totals, and Google Sheets writes.
+The model acts as the WhatsApp sales representative. It can answer ordinary
+questions, understand details supplied in any order, and keep the conversation
+brief. The complete dashboard catalog describes what the business can make;
+the active switch marks what is available for normal ordering that week. The
+application still validates prices, active availability, totals, addresses,
+and confirmations before writing to Google Sheets.
+
+Ready bread is a separate same-day inventory. The agent checks it only after
+the customer has said which product and how many pieces they actually want,
+and only for an explicit same-day or immediate request. A ready-bread order is
+reserved atomically at final confirmation, marked `PAN_LISTO` in the item row,
+and excluded from kitchen production totals. If the full quantity is not
+available, nothing is reserved and the agent offers the complete quantity as
+new production on a valid future date. Reservations left pending by an abrupt
+computer restart are reconciled against Google Sheets during startup.
+
+Products that are not active for the week, or products not yet listed, can be
+captured as special requests. The assistant collects the product, quantity,
+requested date, pickup or delivery, and address when required. After an
+explicit confirmation it writes the request to the same workbook with status
+`REVISION_MANUAL` and kitchen status `Por confirmar`. It is not included in
+confirmed production totals until the administrator reviews it.
 
 The server stops every multi-step interpretation at the final summary. A new
 customer message with an explicit confirmation is always required before an
@@ -307,6 +324,9 @@ The panel supports:
   notice and updates Google Sheets and conversation state.
 - An **Inteligencia** view that shows whether OpenAI is configured, the active
   model, and whether natural-language processing is enabled.
+- A **Pan listo** view for same-day leftovers, with quantity, quality cutoff,
+  and pickup/delivery eligibility. These quantities are not advertised as the
+  weekly menu and future orders never consume them.
 
 Runtime changes are stored in `.data/admin-config.json`, which is excluded
 from Git. New WhatsApp messages read this configuration immediately. The

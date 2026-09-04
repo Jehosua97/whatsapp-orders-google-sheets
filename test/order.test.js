@@ -48,7 +48,7 @@ test("produce filas con el numero correcto de columnas", () => {
   });
 
   assert.equal(summaryRow(result.summary).length, 26);
-  assert.equal(itemRow(result.items[0]).length, 9);
+  assert.equal(itemRow(result.items[0]).length, 10);
 });
 
 test("separa Delivery Brampton de los productos de cocina", () => {

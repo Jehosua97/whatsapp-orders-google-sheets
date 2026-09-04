@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -9,6 +10,12 @@ const {
   correctProductId,
   correctProductName,
 } = require("./product-naming");
+const {
+  availableReadyInventory,
+  normalizeReadyBatch,
+  normalizeReadyBatches,
+  planReadyAllocation,
+} = require("./ready-inventory");
 
 const MAX_PRODUCTS = 10;
 const SERVICE_TYPES = ["PICKUP", "DELIVERY"];
@@ -86,7 +93,7 @@ function defaultState(baseConfig) {
     ...(baseConfig.automationAllowedPhones || []),
   ];
   return {
-    version: 3,
+    version: 4,
     botEnabled: true,
     catalog: [
       {
@@ -191,6 +198,9 @@ function defaultState(baseConfig) {
     },
     ai: normalizeAi({}, baseConfig),
     promotions: { ...DEFAULT_PROMOTIONS },
+    readyInventory: [],
+    readyInventoryMovements: [],
+    readyReservations: [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -413,7 +423,7 @@ class AdminConfigStore {
       return {
         ...defaults,
         ...parsed,
-        version: 3,
+        version: 4,
         botEnabled: parsed.botEnabled !== false,
         catalog: normalizeCatalog(
           repairCatalogEncoding(parsed.catalog, defaults.catalog),
@@ -435,6 +445,18 @@ class AdminConfigStore {
           freeBramptonDelivery:
             parsed.promotions?.freeBramptonDelivery !== false,
         },
+        readyInventory: normalizeReadyBatches(
+          parsed.readyInventory,
+          normalizeCatalog(
+            repairCatalogEncoding(parsed.catalog, defaults.catalog),
+          ),
+        ),
+        readyInventoryMovements: Array.isArray(parsed.readyInventoryMovements)
+          ? parsed.readyInventoryMovements.slice(-1000)
+          : [],
+        readyReservations: Array.isArray(parsed.readyReservations)
+          ? parsed.readyReservations.slice(-1000)
+          : [],
       };
     } catch {
       const state = defaultState(this.baseConfig);
@@ -478,6 +500,7 @@ class AdminConfigStore {
       automationAllowedPhones: new Set(state.automation.allowedPhones),
       automationBlockedPhones: new Set(state.automation.blockedPhones),
       promotions: state.promotions,
+      readyInventory: state.readyInventory,
       deliveryFees: {
         ...this.baseConfig.deliveryFees,
         brampton: state.promotions.freeBramptonDelivery
@@ -488,9 +511,14 @@ class AdminConfigStore {
   }
 
   updateCatalog(catalog) {
+    const normalizedCatalog = normalizeCatalog(catalog);
+    const ids = new Set(normalizedCatalog.map((product) => product.id));
     return this.persist({
       ...this.state,
-      catalog: normalizeCatalog(catalog),
+      catalog: normalizedCatalog,
+      readyInventory: this.state.readyInventory.filter((batch) =>
+        ids.has(batch.productId),
+      ),
     });
   }
 
@@ -531,6 +559,259 @@ class AdminConfigStore {
           promotions.freeBramptonDelivery === true,
       },
     });
+  }
+
+  addReadyInventory(input, now = new Date()) {
+    const timestamp = now.toISOString();
+    const batch = normalizeReadyBatch(
+      {
+        ...input,
+        id: `listo-${crypto.randomUUID()}`,
+        readyAt: input?.readyAt || timestamp,
+        createdAt: timestamp,
+      },
+      { catalog: this.state.catalog, now },
+    );
+    if (batch.quantityAvailable <= 0) {
+      throw new Error("Agrega por lo menos una pieza disponible.");
+    }
+    const movement = {
+      id: `mov-${crypto.randomUUID()}`,
+      type: "ALTA",
+      batchId: batch.id,
+      productId: batch.productId,
+      quantity: batch.quantityAvailable,
+      orderId: "",
+      note: batch.note,
+      at: timestamp,
+    };
+    this.persist({
+      ...this.state,
+      readyInventory: [...this.state.readyInventory, batch],
+      readyInventoryMovements: [
+        ...this.state.readyInventoryMovements,
+        movement,
+      ].slice(-1000),
+    });
+    return clone(batch);
+  }
+
+  updateReadyInventory(id, patch, now = new Date()) {
+    const current = this.state.readyInventory.find((batch) => batch.id === id);
+    if (!current) throw new Error("No se encontró ese lote de pan listo.");
+    const updated = normalizeReadyBatch(patch, {
+      catalog: this.state.catalog,
+      existing: current,
+      now,
+    });
+    const difference = updated.quantityAvailable - current.quantityAvailable;
+    const movements = [...this.state.readyInventoryMovements];
+    if (difference) {
+      movements.push({
+        id: `mov-${crypto.randomUUID()}`,
+        type: "AJUSTE_ADMIN",
+        batchId: updated.id,
+        productId: updated.productId,
+        quantity: difference,
+        orderId: "",
+        note: updated.note,
+        at: now.toISOString(),
+      });
+    }
+    this.persist({
+      ...this.state,
+      readyInventory: this.state.readyInventory.map((batch) =>
+        batch.id === id ? updated : batch,
+      ),
+      readyInventoryMovements: movements.slice(-1000),
+    });
+    return clone(updated);
+  }
+
+  removeReadyInventory(id, now = new Date()) {
+    const current = this.state.readyInventory.find((batch) => batch.id === id);
+    if (!current) throw new Error("No se encontró ese lote de pan listo.");
+    this.persist({
+      ...this.state,
+      readyInventory: this.state.readyInventory.filter(
+        (batch) => batch.id !== id,
+      ),
+      readyInventoryMovements: [
+        ...this.state.readyInventoryMovements,
+        {
+          id: `mov-${crypto.randomUUID()}`,
+          type: "BAJA_ADMIN",
+          batchId: current.id,
+          productId: current.productId,
+          quantity: -Number(current.quantityAvailable || 0),
+          orderId: "",
+          note: current.note,
+          at: now.toISOString(),
+        },
+      ].slice(-1000),
+    });
+    return clone(current);
+  }
+
+  readyAvailability({ now = new Date(), modality = "CUALQUIERA" } = {}) {
+    return clone(
+      availableReadyInventory(this.state.readyInventory, { now, modality }),
+    );
+  }
+
+  reserveReadyInventory(requests, orderId, options = {}) {
+    const wantedOrderId = String(orderId || "").trim();
+    if (!wantedOrderId) throw new Error("El ID del pedido es obligatorio.");
+    const previous = this.state.readyReservations.find(
+      (reservation) =>
+        reservation.orderId === wantedOrderId &&
+        ["PENDIENTE", "RESERVADO"].includes(reservation.status),
+    );
+    if (previous) {
+      return { ok: true, allocations: clone(previous.allocations), repeated: true };
+    }
+
+    const now = options.now || new Date();
+    const modality = options.modality || "CUALQUIERA";
+    const plan = planReadyAllocation(this.state.readyInventory, requests, {
+      now,
+      modality,
+    });
+    if (!plan.ok) return clone(plan);
+
+    const quantitiesByBatch = new Map();
+    for (const allocation of plan.allocations) {
+      quantitiesByBatch.set(
+        allocation.batchId,
+        (quantitiesByBatch.get(allocation.batchId) || 0) + allocation.quantity,
+      );
+    }
+    const inventory = this.state.readyInventory.map((batch) => {
+      const reserved = quantitiesByBatch.get(batch.id) || 0;
+      return reserved
+        ? {
+            ...batch,
+            quantityAvailable: batch.quantityAvailable - reserved,
+            updatedAt: now.toISOString(),
+          }
+        : batch;
+    });
+    const reservation = {
+      orderId: wantedOrderId,
+      modality,
+      status: "PENDIENTE",
+      allocations: plan.allocations,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+    const movements = plan.allocations.map((allocation) => ({
+      id: `mov-${crypto.randomUUID()}`,
+      type: "RESERVA_PEDIDO",
+      batchId: allocation.batchId,
+      productId: allocation.productId,
+      quantity: -allocation.quantity,
+      orderId: wantedOrderId,
+      note: "",
+      at: now.toISOString(),
+    }));
+    this.persist({
+      ...this.state,
+      readyInventory: inventory,
+      readyReservations: [...this.state.readyReservations, reservation].slice(
+        -1000,
+      ),
+      readyInventoryMovements: [
+        ...this.state.readyInventoryMovements,
+        ...movements,
+      ].slice(-1000),
+    });
+    return { ok: true, allocations: clone(plan.allocations), repeated: false };
+  }
+
+  pendingReadyReservations() {
+    return clone(
+      this.state.readyReservations.filter((reservation) =>
+        ["PENDIENTE", "RESERVADO"].includes(reservation.status),
+      ),
+    );
+  }
+
+  commitReadyInventory(orderId, now = new Date()) {
+    const wantedOrderId = String(orderId || "").trim();
+    let changed = false;
+    const reservations = this.state.readyReservations.map((reservation) => {
+      if (
+        reservation.orderId !== wantedOrderId ||
+        !["PENDIENTE", "RESERVADO"].includes(reservation.status)
+      ) {
+        return reservation;
+      }
+      changed = true;
+      return {
+        ...reservation,
+        status: "CONFIRMADO",
+        updatedAt: now.toISOString(),
+      };
+    });
+    if (!changed) return false;
+    this.persist({ ...this.state, readyReservations: reservations });
+    return true;
+  }
+
+  rollbackReadyInventory(orderId, now = new Date()) {
+    const wantedOrderId = String(orderId || "").trim();
+    const reservation = this.state.readyReservations.find(
+      (item) =>
+        item.orderId === wantedOrderId &&
+        ["PENDIENTE", "RESERVADO"].includes(item.status),
+    );
+    if (!reservation) return false;
+    const returnedByBatch = new Map();
+    for (const allocation of reservation.allocations || []) {
+      returnedByBatch.set(
+        allocation.batchId,
+        (returnedByBatch.get(allocation.batchId) || 0) + allocation.quantity,
+      );
+    }
+    const inventory = this.state.readyInventory.map((batch) => {
+      const returned = returnedByBatch.get(batch.id) || 0;
+      return returned
+        ? {
+            ...batch,
+            quantityAvailable: batch.quantityAvailable + returned,
+            quantityInitial: Math.max(
+              batch.quantityInitial,
+              batch.quantityAvailable + returned,
+            ),
+            updatedAt: now.toISOString(),
+          }
+        : batch;
+    });
+    const reservations = this.state.readyReservations.map((item) =>
+      item === reservation
+        ? { ...item, status: "REVERTIDO", updatedAt: now.toISOString() }
+        : item,
+    );
+    const movements = (reservation.allocations || []).map((allocation) => ({
+      id: `mov-${crypto.randomUUID()}`,
+      type: "REVERSA_ERROR",
+      batchId: allocation.batchId,
+      productId: allocation.productId,
+      quantity: allocation.quantity,
+      orderId: wantedOrderId,
+      note: "El pedido no pudo guardarse en Excel",
+      at: now.toISOString(),
+    }));
+    this.persist({
+      ...this.state,
+      readyInventory: inventory,
+      readyReservations: reservations,
+      readyInventoryMovements: [
+        ...this.state.readyInventoryMovements,
+        ...movements,
+      ].slice(-1000),
+    });
+    return true;
   }
 
   upsertClosure({ date, services, reason }) {
